@@ -1,0 +1,123 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: infer-fast-cwdm
+  labels:
+    app: fast-cwdm
+spec:
+  nodeSelector:
+    #topology.kubernetes.io/region: us-west
+    nautilus.io/linstor: "true"
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: nvidia.com/gpu.product
+            operator: In
+            values:
+            - NVIDIA-A10
+            - NVIDIA-GeForce-RTX-3090
+            - NVIDIA-L40
+            - NVIDIA-A40
+
+  tolerations:
+    - key: nvidia.com/gpu
+      operator: Exists
+    - key: nvidia.com/gpu
+      operator: Exists
+      effect: PreferNoSchedule
+  containers:
+    - name: brats-processing
+      image: gitlab-registry.nrp-nautilus.io/prp/jupyter-stack/prp
+      env:
+        - name: REPO_PATH
+          value: /app/fast-cwdm
+        - name: PYTHONPATH
+          value: /app/fast-cwdm
+        - name: CUDA_VISIBLE_DEVICES
+          value: "0"
+        - name: nnUNet_raw
+          value: /app/nnunet/raw
+        - name: nnUNet_preprocessed
+          value: /app/nnunet/preprocessed
+        - name: nnUNet_results
+          value: /app/nnunet/results
+        - name: PYTHONUNBUFFERED
+          value: "1"
+        - name: PYTHONIOENCODING
+          value: "UTF-8"
+        - name: WANDB_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: wandb-credentials
+              key: api-key
+        - name: WANDB_PROJECT
+          value: "cwmd-3d-brats"
+        - name: WANDB_ENTITY
+          value: "timgsereda"
+        - name: WANDB_MODE
+          value: "online"
+        - name: USE_TENSORBOARD
+          value: "true"
+      command: ["/bin/bash", "-c"]
+      args:
+        - |
+          sudo apt-get update && sudo apt-get install -y p7zip-full wget git
+          pip install nibabel blobfile wandb batchgenerators simpleITK gdown
+
+          git clone -b fast-infer https://github.com/tsereda/fast-cwdm.git ${REPO_PATH}
+          cd ${REPO_PATH}
+
+          cp /data/ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData.zip ./ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData.zip
+          7z x ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData.zip -y
+
+          python scripts/drop_modality.py
+
+          mkdir -p ./checkpoints
+
+          cp /data/checkpoints/brats_t1n_BEST_sampled_10.pt  ./checkpoints/
+          cp /data/checkpoints/brats_t1c_BEST_sampled_10.pt  ./checkpoints/
+          cp /data/checkpoints/brats_t2w_BEST_sampled_10.pt  ./checkpoints/
+          cp /data/checkpoints/brats_t2f_BEST_sampled_10.pt  ./checkpoints/
+          ls -la ./checkpoints/
+
+          python scripts/complete_dataset.py \
+            --input_dir pseudo_validation \
+            --output_dir pseudo_validation_completed \
+            --checkpoint_dir ./checkpoints \
+            --device cuda:0
+
+          tail -f /dev/null
+     
+      volumeMounts:
+        - name: workspace
+          mountPath: /app
+        - name: data
+          mountPath: /data
+        - name: shm
+          mountPath: /dev/shm
+    
+      resources:
+        requests:
+          memory: 24Gi
+          cpu: "12"
+          nvidia.com/gpu: "1"
+        limits:
+          memory: 32Gi
+          cpu: "16"
+          nvidia.com/gpu: "1"
+ 
+  volumes:
+    - name: workspace
+      emptyDir:
+        sizeLimit: 50Gi
+    - name: data
+      persistentVolumeClaim:
+        claimName: brats2025-5
+    - name: shm
+      emptyDir:
+        medium: Memory
+        sizeLimit: 16Gi
+ 
+  restartPolicy: Never

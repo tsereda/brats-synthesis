@@ -12,25 +12,36 @@ spec:
       requiredDuringSchedulingIgnoredDuringExecution:
         nodeSelectorTerms:
         - matchExpressions:
+          - key: kubernetes.io/hostname
+            operator: NotIn
+            values:
+            - gpu-01.nrp.mghpcc.org
+        - matchExpressions:
           - key: nvidia.com/gpu.product
             operator: In
             values:
             - NVIDIA-A10
             - NVIDIA-GeForce-RTX-3090
-            - NVIDIA-L40
+            - NVIDIA-GeForce-RTX-4090
+            - NVIDIA-TITAN-RTX
+            - NVIDIA-RTX-A5000
+            - Quadro-RTX-6000
+            - Tesla-V100-SXM2-32GB
             - NVIDIA-A40
+            - NVIDIA-L40
+            - NVIDIA-RTX-A6000
+            - Quadro-RTX-8000
+
   tolerations:
   - key: nvidia.com/gpu
     operator: Exists
     effect: PreferNoSchedule
-  imagePullSecrets:
-  - name: gitlab-registry-secret
   containers:
   - name: fets-container
     image: ghcr.io/fets-ai/front-end:1.0.2
     env:
       - name: REPO_PATH
-        value: /app/UNETR-BraTS-Synthesis
+        value: /app/brats-synthesis
       - name: CUDA_VISIBLE_DEVICES
         value: "0"
     command: ["/bin/bash"]
@@ -41,43 +52,38 @@ spec:
         mv /workspace/FeTS_0.0.9/squashfs-root/usr/lib/liblzma.so.5 /workspace/FeTS_0.0.9/squashfs-root/usr/lib/liblzma.so.5.bak
         apt-get install -y git sudo
         
-        git clone https://github.com/tsereda/UNETR-BraTS-Synthesis.git ${REPO_PATH}
+        git clone https://github.com/tsereda/brats-synthesis.git ${REPO_PATH}
         cd ${REPO_PATH}
         
         apt-get install -y p7zip-full wget
         #pip install nibabel numpy
         
-        for dataset in "TrainingData" "ValidationData"; do
-          zip_file="/data/ASNR-MICCAI-BraTS2023-GLI-Challenge-${dataset}.zip"
-          if [ -f "$zip_file" ]; then
-            echo "Extracting ${dataset}..."
-            cd /data
-            sudo 7z x "$zip_file" -o"/data/"
-            if [ -d "/data/ASNR-MICCAI-BraTS2023-GLI-Challenge-${dataset}" ]; then
-              sudo chown -R jovyan:jovyan "/data/ASNR-MICCAI-BraTS2023-GLI-Challenge-${dataset}"
-              echo "Successfully extracted and set ownership for ${dataset}"
-            fi
-            cd ${REPO_PATH}
-            ln -sf "/data/ASNR-MICCAI-BraTS2023-GLI-Challenge-${dataset}" .
-          fi
-        done
+        # echo "Extracting TrainingData..."
+        # cd /data
+        # sudo 7z x "/data/ASNR-MICCAI-BraTS2023-GLI-Challenge-TrainingData.zip" -o"/data/"
+        # sudo chown -R jovyan:jovyan "/data/ASNR-MICCAI-BraTS2023-GLI-Challenge-TrainingData"
+
+        # echo "Extracting ValidationData..."
+        # cd /data
+        # sudo 7z x "/data/ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData.zip" -o"/data/"
+        # sudo chown -R jovyan:jovyan "/data/ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData"
         
-        python dropout_modality.py \
-          --input_dir ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData \
-          --output_dir pseudo_validation
+        # python dropout_modality.py \
+        #   --input_dir ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData \
+        #   --output_dir pseudo_validation
           
-        python dropout_modality.py --verify --output_dir pseudo_validation
+        # python dropout_modality.py --verify --output_dir pseudo_validation
 
-        pip install torch monai[all] nibabel
+        # pip install torch monai[all] nibabel
 
-        python inf_synth.py
+        # python inf_synth.py
 
-        chmod +x convert_to_fets_format.sh
-        ./convert_to_fets_format.sh
+        # chmod +x convert_to_fets_format.sh
+        # ./convert_brats_to_fets.sh -i completed_cases -o fets_formatted
 
-        /workspace/FeTS_0.0.9/FeTS/0.0.9/FeTS-0.0.9.bin --appimage-extract
+        # /workspace/FeTS_0.0.9/FeTS/0.0.9/FeTS-0.0.9.bin --appimage-extract
 
-        ./squashfs-root/usr/bin/fets_cli_segment -d fets_formatted/ -a deepMedic -g 0 -t 0
+        # ./squashfs-root/usr/bin/fets_cli_segment -d fets_formatted/ -a fets_singlet,fets_triplet -lF STAPLE,ITKVoting,SIMPLE,MajorityVoting -g 0 -t 0
         
         tail -f /dev/null
     volumeMounts:
@@ -95,4 +101,4 @@ spec:
   volumes:
     - name: data
       persistentVolumeClaim:
-        claimName: brats2025-2
+        claimName: brats2025-3

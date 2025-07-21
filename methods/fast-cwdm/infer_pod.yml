@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: infer-fast-cwdm
+  name: inf-fast-cwdm
   labels:
     app: fast-cwdm
 spec:
@@ -29,7 +29,7 @@ spec:
       effect: PreferNoSchedule
   containers:
     - name: brats-processing
-      image: gitlab-registry.nrp-nautilus.io/prp/jupyter-stack/prp
+      image: ghcr.io/fets-ai/front-end:1.0.2
       env:
         - name: REPO_PATH
           value: /app/fast-cwdm
@@ -37,12 +37,6 @@ spec:
           value: /app/fast-cwdm
         - name: CUDA_VISIBLE_DEVICES
           value: "0"
-        - name: nnUNet_raw
-          value: /app/nnunet/raw
-        - name: nnUNet_preprocessed
-          value: /app/nnunet/preprocessed
-        - name: nnUNet_results
-          value: /app/nnunet/results
         - name: PYTHONUNBUFFERED
           value: "1"
         - name: PYTHONIOENCODING
@@ -58,15 +52,13 @@ spec:
           value: "timgsereda"
         - name: WANDB_MODE
           value: "online"
-        - name: USE_TENSORBOARD
-          value: "true"
       command: ["/bin/bash", "-c"]
       args:
         - |
           sudo apt-get update && sudo apt-get install -y p7zip-full wget git
           pip install nibabel blobfile wandb batchgenerators simpleITK gdown
 
-          git clone -b fast-infer https://github.com/tsereda/fast-cwdm.git ${REPO_PATH}
+          git clone https://github.com/tsereda/brats-synthesis.git ${REPO_PATH}
           cd ${REPO_PATH}
 
           cp /data/ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData.zip ./ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData.zip
@@ -82,7 +74,7 @@ spec:
           cp /data/checkpoints/brats_t2f_BEST_sampled_10.pt  ./checkpoints/
           ls -la ./checkpoints/
 
-          python scripts/complete_dataset.py \
+          python fast-cwdm/scripts/complete_dataset.py \
             --input_dir pseudo_validation \
             --output_dir pseudo_validation_completed \
             --checkpoint_dir ./checkpoints \

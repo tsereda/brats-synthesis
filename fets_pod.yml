@@ -58,14 +58,10 @@ spec:
         apt-get install -y p7zip-full wget
         #pip install nibabel numpy
         
-        # echo "Extracting TrainingData..."
-        # cd /data
-        # sudo 7z x "/data/ASNR-MICCAI-BraTS2023-GLI-Challenge-TrainingData.zip" -o"/data/"
+        # sudo 7z x "/data/ASNR-MICCAI-BraTS2023-GLI-Challenge-TrainingData.zip"
         # sudo chown -R jovyan:jovyan "/data/ASNR-MICCAI-BraTS2023-GLI-Challenge-TrainingData"
 
-        # echo "Extracting ValidationData..."
-        # cd /data
-        # sudo 7z x "/data/ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData.zip" -o"/data/"
+        # sudo 7z x "/data/ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData.zip"
         # sudo chown -R jovyan:jovyan "/data/ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData"
         
         # python dropout_modality.py \
@@ -79,7 +75,7 @@ spec:
         # python inf_synth.py
 
         # chmod +x convert_to_fets_format.sh
-        # ./convert_brats_to_fets.sh -i completed_cases -o fets_formatted
+        # ./convert_to_fets_format.sh -i completed_cases -o fets_formatted
 
         # /workspace/FeTS_0.0.9/FeTS/0.0.9/FeTS-0.0.9.bin --appimage-extract
 

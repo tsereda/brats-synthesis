@@ -1,8 +1,6 @@
 #!/bin/bash
-
 # Script to convert BraTS format to FeTS format
 # Creates proper directory structure and file naming for FeTS
-
 # Function to display usage
 usage() {
     echo "Usage: $0 -i <input_directory> -o <output_directory>"
@@ -69,25 +67,54 @@ patient_num=1
 for case_dir in "$INPUT_DIR"/BraTS-GLI-*/; do
     if [ -d "$case_dir" ]; then
         case_name=$(basename "$case_dir")
-       
+        
         # Create patient directory with zero-padded number
         patient_dir=$(printf "Patient_%03d" $patient_num)
         mkdir -p "$OUTPUT_DIR/$patient_dir"
-       
+        
         echo "Processing $case_name → $patient_dir"
-       
+        
+        # BraTS 2023 file naming pattern: BraTS-GLI-XXXXX-XXX-{modality}.nii.gz
+        # Map BraTS modalities to FeTS expected names:
+        # t1n -> t1 (T1-weighted native)
+        # t1c -> t1ce (T1-weighted contrast-enhanced) 
+        # t2w -> t2 (T2-weighted)
+        # t2f -> flair (T2-FLAIR)
+        
+        t1_file="${case_dir}/${case_name}-t1n.nii.gz"
+        t1ce_file="${case_dir}/${case_name}-t1c.nii.gz"
+        t2_file="${case_dir}/${case_name}-t2w.nii.gz"
+        flair_file="${case_dir}/${case_name}-t2f.nii.gz"
+        
         # Check if all required files exist
-        if [ -f "$case_dir/t1.nii.gz" ] && [ -f "$case_dir/t1ce.nii.gz" ] && [ -f "$case_dir/t2.nii.gz" ] && [ -f "$case_dir/flair.nii.gz" ]; then
+        if [ -f "$t1_file" ] && [ -f "$t1ce_file" ] && [ -f "$t2_file" ] && [ -f "$flair_file" ]; then
             # Copy and rename files to FeTS format
-            cp "$case_dir/t1.nii.gz" "$OUTPUT_DIR/$patient_dir/${patient_dir}_brain_t1.nii.gz"
-            cp "$case_dir/t1ce.nii.gz" "$OUTPUT_DIR/$patient_dir/${patient_dir}_brain_t1ce.nii.gz"
-            cp "$case_dir/t2.nii.gz" "$OUTPUT_DIR/$patient_dir/${patient_dir}_brain_t2.nii.gz"
-            cp "$case_dir/flair.nii.gz" "$OUTPUT_DIR/$patient_dir/${patient_dir}_brain_flair.nii.gz"
-           
-            echo "  ✅ Converted $case_name to $patient_dir"
+            cp "$t1_file" "$OUTPUT_DIR/$patient_dir/${patient_dir}_brain_t1.nii.gz"
+            cp "$t1ce_file" "$OUTPUT_DIR/$patient_dir/${patient_dir}_brain_t1ce.nii.gz"
+            cp "$t2_file" "$OUTPUT_DIR/$patient_dir/${patient_dir}_brain_t2.nii.gz"
+            cp "$flair_file" "$OUTPUT_DIR/$patient_dir/${patient_dir}_brain_flair.nii.gz"
+            
+            # Also copy segmentation file if it exists (for training data)
+            seg_file="${case_dir}/${case_name}-seg.nii.gz"
+            if [ -f "$seg_file" ]; then
+                cp "$seg_file" "$OUTPUT_DIR/$patient_dir/${patient_dir}_brain_seg.nii.gz"
+                echo "  ✅ Converted $case_name to $patient_dir (with segmentation)"
+            else
+                echo "  ✅ Converted $case_name to $patient_dir (no segmentation)"
+            fi
+            
             ((patient_num++))
         else
             echo "  ❌ Missing files in $case_name, skipping"
+            echo "    Expected: ${case_name}-t1n.nii.gz, ${case_name}-t1c.nii.gz, ${case_name}-t2w.nii.gz, ${case_name}-t2f.nii.gz"
+            
+            # Debug: show what files are actually present
+            echo "    Found files:"
+            for file in "$case_dir"/*.nii.gz; do
+                if [ -f "$file" ]; then
+                    echo "      $(basename "$file")"
+                fi
+            done
         fi
     fi
 done

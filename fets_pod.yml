@@ -12,11 +12,11 @@ spec:
       requiredDuringSchedulingIgnoredDuringExecution:
         nodeSelectorTerms:
         - matchExpressions:
+          # Both conditions must be satisfied (AND relationship)
           - key: kubernetes.io/hostname
             operator: NotIn
             values:
             - gpu-01.nrp.mghpcc.org
-        - matchExpressions:
           - key: nvidia.com/gpu.product
             operator: In
             values:

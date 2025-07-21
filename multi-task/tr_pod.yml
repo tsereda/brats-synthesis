@@ -58,7 +58,6 @@ spec:
           value: "timgsereda"
         - name: WANDB_MODE
           value: "online"
-
       command: ["/bin/bash", "-c"]
       args:
         - |
@@ -111,7 +110,6 @@ spec:
           #   --output_dir .
 
           tail -f /dev/null
-      
       volumeMounts:
         - name: workspace
           mountPath: /app
@@ -119,7 +117,6 @@ spec:
           mountPath: /data
         - name: shm
           mountPath: /dev/shm
-      
       resources:
         requests:
           memory: 24Gi  
@@ -129,7 +126,6 @@ spec:
           memory: 32Gi
           cpu: "16"
           nvidia.com/gpu: "1"
-  
   volumes:
     - name: workspace
       emptyDir:
@@ -141,5 +137,4 @@ spec:
       emptyDir:
         medium: Memory
         sizeLimit: 16Gi
-  
   restartPolicy: Never

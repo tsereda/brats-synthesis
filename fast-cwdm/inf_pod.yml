@@ -32,9 +32,9 @@ spec:
       image: ghcr.io/fets-ai/front-end:1.0.2
       env:
         - name: REPO_PATH
-          value: /app/fast-cwdm
+          value: /app/brats-synthesis
         - name: PYTHONPATH
-          value: /app/fast-cwdm
+          value: /app/brats-synthesis
         - name: CUDA_VISIBLE_DEVICES
           value: "0"
         - name: PYTHONUNBUFFERED
@@ -64,7 +64,7 @@ spec:
           cp /data/ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData.zip ./ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData.zip
           7z x ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData.zip -y
 
-          python scripts/drop_modality.py
+          python fast-cwdm/scripts/drop_modality.py
 
           mkdir -p ./checkpoints
 

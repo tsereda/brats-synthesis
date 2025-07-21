@@ -34,17 +34,11 @@ spec:
       
       env:
         - name: REPO_PATH
-          value: /app/UNETR-BraTS-Synthesis
+          value: /app/UNETR-brats-synthesis
         - name: PYTHONPATH
-          value: /app/UNETR-BraTS-Synthesis
+          value: /app/UNETR-brats-synthesis
         - name: CUDA_VISIBLE_DEVICES
           value: "0"
-        - name: nnUNet_raw
-          value: /app/nnunet/raw
-        - name: nnUNet_preprocessed
-          value: /app/nnunet/preprocessed
-        - name: nnUNet_results
-          value: /app/nnunet/results
         - name: PYTHONUNBUFFERED
           value: "1"
         - name: PYTHONIOENCODING
@@ -60,16 +54,11 @@ spec:
           value: "timgsereda"
         - name: WANDB_MODE
           value: "online"
-        - name: SYNAPSE_AUTHTOKEN
-          valueFrom:
-            secretKeyRef:
-              name: synapse-credentials
-              key: authtoken
-      
+
       command: ["/bin/bash", "-c"]
       args:
         - |
-          git clone https://github.com/tsereda/UNETR-BraTS-Synthesis.git ${REPO_PATH}
+          git clone https://github.com/tsereda/brats-synthesis.git ${REPO_PATH}
           cd ${REPO_PATH}
           
           sudo apt-get update && sudo apt-get install -y p7zip-full wget git
@@ -109,7 +98,7 @@ spec:
           pip install "numpy<2.0" torch nibabel matplotlib monai[all]
 
 
-          python multitask.py --batch_size 1 --max_epoch 2 --target_modality all
+          python multi-task/train.py --batch_size 1 --max_epoch 2 --target_modality all
 
           # Run inference
           # python inferenceseg.py \

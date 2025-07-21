@@ -1,9 +1,9 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: multitask-brats
+  name: tr-multitask
   labels:
-    app: multitask-brats
+    app: tr-multitask
 spec:
   nodeSelector:
     #topology.kubernetes.io/region: us-west
@@ -27,11 +27,15 @@ spec:
             - NVIDIA-L40
             - NVIDIA-RTX-A6000
             - Quadro-RTX-8000
-  
+  tolerations:
+    - key: nvidia.com/gpu
+      operator: Exists
+    - key: nvidia.com/gpu
+      operator: Exists
+      effect: PreferNoSchedule
   containers:
     - name: brats-processing
       image: gitlab-registry.nrp-nautilus.io/prp/jupyter-stack/prp
-      
       env:
         - name: REPO_PATH
           value: /app/UNETR-brats-synthesis

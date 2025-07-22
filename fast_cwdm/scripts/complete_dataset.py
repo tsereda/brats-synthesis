@@ -21,7 +21,7 @@ from fast_cwdm.guided_diffusion.script_util import (
     args_to_dict
 )
 from fast_cwdm.guided_diffusion.bratsloader import clip_and_normalize
-from DWT_IDWT.DWT_IDWT_layer import IDWT_3D, DWT_3D
+from fast_cwdm.DWT_IDWT.DWT_IDWT_layer import IDWT_3D, DWT_3D
 from monai.metrics import SSIMMetric, PSNRMetric
 import torch.nn.functional as F
 

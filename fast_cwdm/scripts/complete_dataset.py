@@ -2,6 +2,7 @@
 """
 Enhanced medical image synthesis script with SSIM evaluation
 Adds comprehensive metrics including SSIM for Fast-CWDM evaluation
+Now supports both real synthesis and evaluation modes
 """
 
 import argparse
@@ -11,6 +12,7 @@ import os
 import torch as th
 import glob
 import sys
+import random
 
 sys.path.append(".")
 
@@ -110,27 +112,50 @@ def load_image(file_path):
     return img_tensor.float()
 
 
-def find_missing_modality(case_dir):
-    """Find which modality is missing."""
+def find_missing_modality(case_dir, evaluation_mode=False, target_modality=None):
+    """Find which modality is missing (real) or select one to exclude (evaluation)."""
+    case_name = os.path.basename(case_dir)
+    
+    if evaluation_mode:
+        # Evaluation mode: artificially select a modality to exclude
+        if target_modality:
+            # Use specified target modality
+            return target_modality
+        else:
+            # Randomly select a modality to exclude
+            return random.choice(MODALITIES)
+    else:
+        # Real synthesis mode: find actually missing modality
+        for modality in MODALITIES:
+            file_path = os.path.join(case_dir, f"{case_name}-{modality}.nii.gz")
+            if not os.path.exists(file_path):
+                return modality
+        return None
+
+
+def check_complete_case(case_dir):
+    """Check if case has all 4 modalities (for evaluation mode)."""
     case_name = os.path.basename(case_dir)
     
     for modality in MODALITIES:
         file_path = os.path.join(case_dir, f"{case_name}-{modality}.nii.gz")
         if not os.path.exists(file_path):
-            return modality
-    
-    return None
+            return False
+    return True
 
 
-def load_available_modalities(case_dir, missing_modality):
-    """Load all available modalities."""
+def load_available_modalities(case_dir, missing_modality, evaluation_mode=False):
+    """Load all available modalities (excluding the missing/target one)."""
     case_name = os.path.basename(case_dir)
     available = [m for m in MODALITIES if m != missing_modality]
     
     modalities = {}
     for modality in available:
         file_path = os.path.join(case_dir, f"{case_name}-{modality}.nii.gz")
-        modalities[modality] = load_image(file_path)
+        if os.path.exists(file_path):  # Extra safety check
+            modalities[modality] = load_image(file_path)
+        elif not evaluation_mode:
+            print(f"  Warning: Expected file missing: {file_path}")
     
     return modalities
 
@@ -443,32 +468,44 @@ def save_result(synthesized, case_dir, missing_modality, output_dir):
     print(f"✅ Saved: {output_path}")
 
 
-def process_case(case_dir, output_dir, checkpoint_dir, device, metrics_calculator=None, evaluate_metrics=False):
+def process_case(case_dir, output_dir, checkpoint_dir, device, metrics_calculator=None, 
+                evaluation_mode=False, target_modality=None):
     """Process a single case with optional metrics evaluation."""
     case_name = os.path.basename(case_dir)
     print(f"\n=== Processing {case_name} ===")
     
-    # Find missing modality
-    missing_modality = find_missing_modality(case_dir)
+    # Check if case is complete (for evaluation mode)
+    if evaluation_mode and not check_complete_case(case_dir):
+        print(f"Skipping incomplete case in evaluation mode: {case_name}")
+        return False, {}
+    
+    # Find missing modality (real or artificial)
+    missing_modality = find_missing_modality(case_dir, evaluation_mode, target_modality)
     if not missing_modality:
         print(f"No missing modality in {case_name}")
         return False, {}
     
-    print(f"Missing modality: {missing_modality}")
+    print(f"{'Target' if evaluation_mode else 'Missing'} modality: {missing_modality}")
     
     try:
-        # Load available modalities
-        available_modalities = load_available_modalities(case_dir, missing_modality)
+        # Load available modalities (excluding the target one)
+        available_modalities = load_available_modalities(case_dir, missing_modality, evaluation_mode)
+        
+        if len(available_modalities) != 3:
+            print(f"❌ Expected 3 available modalities, got {len(available_modalities)}")
+            return False, {}
         
         # Load target for evaluation if requested
         target_data = None
-        if evaluate_metrics:
-            # For evaluation, we need the ground truth - 
-            # This would be used when you have the complete dataset for validation
+        if evaluation_mode and metrics_calculator:
+            # In evaluation mode, load the "missing" modality as ground truth
             target_file = os.path.join(case_dir, f"{case_name}-{missing_modality}.nii.gz")
             if os.path.exists(target_file):
+                print(f"Loading ground truth: {target_file}")
                 target_data = load_image(target_file)
                 target_data = target_data[0]  # Remove batch dimension
+            else:
+                print(f"❌ Ground truth file not found: {target_file}")
         
         # Find checkpoint
         checkpoint_path = find_checkpoint(missing_modality, checkpoint_dir)
@@ -479,8 +516,11 @@ def process_case(case_dir, output_dir, checkpoint_dir, device, metrics_calculato
             metrics_calculator, target_data
         )
         
-        # Save result
-        save_result(synthesized, case_dir, missing_modality, output_dir)
+        # Save result (skip in evaluation mode to avoid overwriting originals)
+        if not evaluation_mode:
+            save_result(synthesized, case_dir, missing_modality, output_dir)
+        else:
+            print(f"📊 Evaluation mode: skipping file save for {case_name}")
         
         print(f"✅ Successfully processed {case_name}")
         return True, metrics
@@ -501,11 +541,28 @@ def main():
     parser.add_argument("--max_cases", type=int, default=None)
     parser.add_argument("--evaluate_metrics", action="store_true",
                         help="Calculate comprehensive metrics (requires ground truth)")
+    parser.add_argument("--evaluation_mode", action="store_true",
+                        help="Evaluation mode: use complete dataset and artificially exclude modalities")
+    parser.add_argument("--target_modality", choices=MODALITIES, default=None,
+                        help="Specific modality to synthesize in evaluation mode (random if not specified)")
+    parser.add_argument("--seed", type=int, default=42,
+                        help="Random seed for reproducible evaluation")
     
     args = parser.parse_args()
     
     device = th.device(args.device if th.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
+    
+    if args.evaluation_mode:
+        print(f"🧪 EVALUATION MODE: Using complete dataset with artificial exclusion")
+        print(f"   Target modality: {args.target_modality or 'random'}")
+        print(f"   Random seed: {args.seed}")
+        random.seed(args.seed)  # For reproducible evaluation
+        # Force metrics calculation in evaluation mode
+        args.evaluate_metrics = True
+    else:
+        print(f"🔧 SYNTHESIS MODE: Using incomplete dataset")
+    
     print(f"🔧 Enhanced synthesis with comprehensive metrics")
     
     # Initialize metrics calculator
@@ -522,7 +579,8 @@ def main():
     print(f"Found {len(case_dirs)} cases")
     
     # Process cases
-    os.makedirs(args.output_dir, exist_ok=True)
+    if not args.evaluation_mode:
+        os.makedirs(args.output_dir, exist_ok=True)
     
     successful = 0
     all_metrics = {modality: [] for modality in MODALITIES}
@@ -531,16 +589,22 @@ def main():
         case_dir = os.path.join(args.input_dir, case_dir_name)
         success, metrics = process_case(
             case_dir, args.output_dir, args.checkpoint_dir, device,
-            metrics_calculator, args.evaluate_metrics
+            metrics_calculator, args.evaluation_mode, args.target_modality
         )
         
         if success:
             successful += 1
             # Collect metrics if available
             if metrics:
-                missing_modality = find_missing_modality(case_dir)
-                if missing_modality:
-                    all_metrics[missing_modality].append(metrics)
+                if args.evaluation_mode:
+                    # In evaluation mode, we know which modality was synthesized
+                    target_mod = find_missing_modality(case_dir, args.evaluation_mode, args.target_modality)
+                    all_metrics[target_mod].append(metrics)
+                else:
+                    # In synthesis mode, find the actual missing modality
+                    missing_modality = find_missing_modality(case_dir, False)
+                    if missing_modality:
+                        all_metrics[missing_modality].append(metrics)
     
     print(f"\n=== Summary ===")
     print(f"Successful: {successful}/{len(case_dirs)}")

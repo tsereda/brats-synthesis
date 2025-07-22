@@ -79,7 +79,8 @@ spec:
             --input_dir pseudo_validation \
             --output_dir pseudo_validation_completed \
             --checkpoint_dir ./checkpoints \
-            --device cuda:0
+            --device cuda:0 \
+            --evaluate_metrics
 
           tail -f /dev/null
      

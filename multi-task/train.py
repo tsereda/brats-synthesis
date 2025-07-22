@@ -670,8 +670,7 @@ def train_single_multitask_model(target_modality, save_dir, max_epochs=50, batch
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
     
-    # Find data
-    base_dir = "/app/UNETR-BraTS-Synthesis"
+    base_dir = "/app/brats-synthesis"
     data_dir = os.path.join(base_dir, "ASNR-MICCAI-BraTS2023-GLI-Challenge-TrainingData")
     all_cases = find_multitask_cases(data_dir, target_modality=target_modality)
     
@@ -680,7 +679,6 @@ def train_single_multitask_model(target_modality, save_dir, max_epochs=50, batch
         wandb.finish()
         return 0.0
     
-    # Split data
     np.random.seed(42)
     np.random.shuffle(all_cases)
     split_idx = int(0.8 * len(all_cases))
@@ -690,14 +688,12 @@ def train_single_multitask_model(target_modality, save_dir, max_epochs=50, batch
     print(f"Training cases: {len(train_cases)}")
     print(f"Validation cases: {len(val_cases)}")
     
-    # Create datasets
     train_transform, val_transform = get_multitask_transforms(roi, num_segmentation_classes)
     train_ds = Dataset(data=train_cases, transform=train_transform)
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=4, pin_memory=True)
     val_ds = Dataset(data=val_cases, transform=val_transform)
     val_loader = DataLoader(val_ds, batch_size=1, shuffle=False, num_workers=2, pin_memory=True)
     
-    # Initialize model
     model = MultiTaskSwinUNETR(num_segmentation_classes=num_segmentation_classes).to(device)
     loss_func = MultiTaskLoss(synthesis_weight=1.0, segmentation_weight=1.0, num_segmentation_classes=num_segmentation_classes)
     optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4, weight_decay=1e-5)

@@ -1,7 +1,10 @@
 #!/usr/bin/env python3
 """
-BraTS Multi-task UNETR: Synthesis + Segmentation
-Train 4 models that simultaneously synthesize missing modality and perform segmentation
+BraTS Multi-task UNETR: Synthesis + Segmentation - FIXED VERSION
+Key fixes:
+1. Convert BraTS labels to model format during data loading
+2. Fix validation output channel indexing
+3. Fix visualization array concatenation
 """
 
 import os
@@ -57,6 +60,16 @@ class AverageMeter(object):
                 self.avg = self.sum / self.count
             else:
                 self.avg = self.sum
+
+
+# FIX 1: Add BraTS to model label conversion
+class ConvertBraTSLabels(transforms.Transform):
+    """Convert BraTS labels {0,1,2,4} to model format {0,1,2,3}"""
+    
+    def __call__(self, data):
+        # Convert label 4 (ET) to label 3
+        data[data == 4] = 3
+        return data
 
 
 class MultiTaskSwinUNETR(nn.Module):
@@ -246,7 +259,7 @@ class MultiTaskLogger:
     
     def _log_multitask_sample(self, input_vol, target_synth, target_seg, 
                                pred_synth, pred_seg, case_name, stage_info):
-        """Log detailed multi-task sample with color overlays"""
+        """Log detailed multi-task sample with color overlays - FIXED VERSION"""
         try:
             # Handle input volume shape
             if input_vol.shape[0] == 3:
@@ -256,7 +269,7 @@ class MultiTaskLogger:
                 # Remove singleton dimension
                 input_vol = input_vol[0]
             
-            # Squeeze other arrays
+            # Squeeze other arrays and ensure they're 3D
             target_synth = np.squeeze(target_synth)
             pred_synth = np.squeeze(pred_synth)
             target_seg = np.squeeze(target_seg)
@@ -265,16 +278,19 @@ class MultiTaskLogger:
             # Get middle slice
             slice_idx = input_vol.shape[-1] // 2
             
-            # Extract slices
-            if input_vol.ndim == 4:
+            # Extract slices - FIX: Handle different input shapes more robustly
+            if input_vol.ndim == 4 and input_vol.shape[0] == 3:
                 input1_slice = input_vol[0, :, :, slice_idx]
                 input2_slice = input_vol[1, :, :, slice_idx]
                 input3_slice = input_vol[2, :, :, slice_idx]
-            else:
-                # Fallback if shape is unexpected
+            elif input_vol.ndim == 3:
+                # Single channel - replicate for visualization
                 input1_slice = input_vol[:, :, slice_idx]
                 input2_slice = input_vol[:, :, slice_idx]
                 input3_slice = input_vol[:, :, slice_idx]
+            else:
+                print(f"Unexpected input_vol shape: {input_vol.shape}")
+                return
             
             target_synth_slice = target_synth[:, :, slice_idx]
             pred_synth_slice = pred_synth[:, :, slice_idx]
@@ -319,8 +335,8 @@ class MultiTaskLogger:
                 img = (img * 255).astype(np.uint8)
                 return np.stack([img, img, img], axis=-1)
 
-            # Create layout
-            layout = np.concatenate([
+            # FIX: Ensure all arrays are 3D with same first two dimensions
+            all_slices = [
                 gray2rgb(input1_slice),
                 gray2rgb(input2_slice),
                 gray2rgb(input3_slice),
@@ -328,7 +344,16 @@ class MultiTaskLogger:
                 gray2rgb(pred_synth_slice),
                 target_seg_colored,
                 pred_seg_colored
-            ], axis=1)
+            ]
+            
+            # Verify all arrays have the same shape
+            shapes = [arr.shape for arr in all_slices]
+            if not all(shape == shapes[0] for shape in shapes):
+                print(f"Shape mismatch in visualization arrays: {shapes}")
+                return
+
+            # Create layout - FIX: Now all arrays have same dimensions
+            layout = np.concatenate(all_slices, axis=1)
 
             # Create labels
             labels = " | ".join([
@@ -486,7 +511,7 @@ def multitask_train_epoch(model, loader, optimizer, epoch, loss_func, max_epochs
 
 
 def multitask_val_epoch(model, loader, epoch, max_epochs, target_modality, logger):
-    """Validation epoch for multi-task learning"""
+    """Validation epoch for multi-task learning - FIXED VERSION"""
     model.eval()
     
     # Initialize metrics
@@ -535,9 +560,9 @@ def multitask_val_epoch(model, loader, epoch, max_epochs, target_modality, logge
                     cval=0.0,
                 )
 
-                # Split predictions
-                pred_synthesis = predicted[:, 0:1, ...]
-                pred_segmentation_raw = predicted[:, 1:, ...]
+                # FIX 2: Correct output channel indexing
+                pred_synthesis = predicted[:, 0:1, ...]  # First channel
+                pred_segmentation_raw = predicted[:, 1:5, ...]  # FIXED: Next 4 channels (not 3!)
 
                 # Synthesis metrics
                 synth_l1 = F.l1_loss(pred_synthesis, target_synthesis)
@@ -553,15 +578,20 @@ def multitask_val_epoch(model, loader, epoch, max_epochs, target_modality, logge
                 pred_seg_softmax = post_softmax(pred_segmentation_raw)
                 pred_seg_discrete = post_pred_seg(pred_seg_softmax)
 
+                # FIX 3: Ensure target segmentation is in correct format {0,1,2,3}
+                # BraTS labels should already be converted during data loading
+                
                 # Calculate dice score
                 dice_metric.reset()
                 dice_metric(y_pred=pred_seg_discrete, y=target_segmentation)
-                dice_scores, not_nans  = dice_metric.aggregate()
+                dice_scores, not_nans = dice_metric.aggregate()
                 
                 if isinstance(dice_scores, torch.Tensor):
-                    dice_avg = dice_scores.mean().item()
+                    # Get dice for each class and compute mean
+                    valid_dice = dice_scores[not_nans] if torch.any(not_nans) else dice_scores
+                    dice_avg = valid_dice.mean().item() if len(valid_dice) > 0 else 0.0
                 else:
-                    dice_avg = float(dice_scores)
+                    dice_avg = float(dice_scores) if dice_scores is not None else 0.0
                 
                 all_dice_scores.append(dice_avg)
 
@@ -583,6 +613,8 @@ def multitask_val_epoch(model, loader, epoch, max_epochs, target_modality, logge
 
             except Exception as e:
                 print(f"Error in validation step {idx}: {e}")
+                import traceback
+                traceback.print_exc()
                 continue
 
     # Calculate overall dice score
@@ -603,10 +635,14 @@ def multitask_val_epoch(model, loader, epoch, max_epochs, target_modality, logge
 
 
 def get_multitask_transforms(roi, num_segmentation_classes=4):
-    """Get transforms for multi-task learning"""
+    """Get transforms for multi-task learning - FIXED VERSION"""
+    
+    # FIX 4: Add BraTS label conversion to transforms
     train_transform = transforms.Compose([
         transforms.LoadImaged(keys=["input_image", "target_synthesis", "target_segmentation"]),
         transforms.EnsureChannelFirstd(keys=["input_image", "target_synthesis", "target_segmentation"]),
+        # Convert BraTS labels {0,1,2,4} to model format {0,1,2,3}
+        transforms.Lambdad(keys=["target_segmentation"], func=ConvertBraTSLabels()),
         transforms.NormalizeIntensityd(keys=["input_image", "target_synthesis"], nonzero=True, channel_wise=True),
         transforms.CropForegroundd(
             keys=["input_image", "target_synthesis", "target_segmentation"],
@@ -630,6 +666,8 @@ def get_multitask_transforms(roi, num_segmentation_classes=4):
     val_transform = transforms.Compose([
         transforms.LoadImaged(keys=["input_image", "target_synthesis", "target_segmentation"]),
         transforms.EnsureChannelFirstd(keys=["input_image", "target_synthesis", "target_segmentation"]),
+        # Convert BraTS labels {0,1,2,4} to model format {0,1,2,3}
+        transforms.Lambdad(keys=["target_segmentation"], func=ConvertBraTSLabels()),
         transforms.NormalizeIntensityd(keys=["input_image", "target_synthesis"], nonzero=True, channel_wise=True),
         transforms.CropForegroundd(
             keys=["input_image", "target_synthesis", "target_segmentation"],
@@ -779,7 +817,7 @@ def main():
     if args.target_modality != 'all':
         modalities = [args.target_modality]
     
-    print(f"🚀 MULTI-TASK TRAINING: Synthesis + Segmentation")
+    print(f"🚀 MULTI-TASK TRAINING: Synthesis + Segmentation - FIXED VERSION")
     print(f"📊 Training {len(modalities)} model(s)")
     print(f"💾 Models will be saved to: {args.save_dir}")
     

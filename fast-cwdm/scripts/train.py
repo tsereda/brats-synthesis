@@ -30,7 +30,7 @@ def main():
 
     # --- wandb integration ---
     wandb.init(
-        project="cwmd-3d-brats",
+        project="fast-cwmd-brats",
         entity="timgsereda",
         config=vars(args),
         mode="online"

@@ -102,7 +102,7 @@ spec:
           
           pip install "numpy<2.0" torch nibabel matplotlib monai[all]
 
-
+          
           python multi-task/train.py --batch_size 1 --max_epoch 2 --target_modality all
 
           # Run inference

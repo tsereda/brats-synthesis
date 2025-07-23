@@ -29,7 +29,7 @@ spec:
       effect: PreferNoSchedule
   containers:
     - name: brats-processing
-      image: ghcr.io/fets-ai/front-end:1.0.2
+      image: gitlab-registry.nrp-nautilus.io/prp/jupyter-stack/prp
       env:
         - name: REPO_PATH
           value: /app/brats-synthesis
@@ -55,10 +55,11 @@ spec:
       command: ["/bin/bash", "-c"]
       args:
         - |
+          apt get install sudo
           sudo apt-get update && sudo apt-get install -y p7zip-full wget git
-          pip install nibabel blobfile wandb batchgenerators simpleITK gdown
+          pip install nibabel blobfile wandb batchgenerators simpleITK gdown monai
 
-          git clone https://github.com/tsereda/brats-synthesis.git ${REPO_PATH}
+          git clone -b cwdmssim https://github.com/tsereda/brats-synthesis.git ${REPO_PATH}
           cd ${REPO_PATH}
 
           cp /data/ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData.zip ./ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData.zip
@@ -74,11 +75,12 @@ spec:
           cp /data/checkpoints/brats_t2f_BEST_sampled_10.pt  ./checkpoints/
           ls -la ./checkpoints/
 
-          python fast-cwdm/scripts/complete_dataset.py \
-            --input_dir pseudo_validation \
-            --output_dir pseudo_validation_completed \
+          python complete_dataset.py \
+            --input_dir ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData \
             --checkpoint_dir ./checkpoints \
-            --device cuda:0
+            --device cuda:0 \
+            --evaluation_mode \
+            --max_cases 50
 
           tail -f /dev/null
      

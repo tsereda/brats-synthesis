@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .nn import checkpoint, conv_nd, linear, avg_pool_nd, zero_module, normalization, timestep_embedding
-from DWT_IDWT.DWT_IDWT_layer import DWT_3D, IDWT_3D
+from fast_cwdm.DWT_IDWT.DWT_IDWT_layer import DWT_3D, IDWT_3D
 
 
 class TimestepBlock(nn.Module):

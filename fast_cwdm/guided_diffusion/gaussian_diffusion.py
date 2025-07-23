@@ -21,7 +21,7 @@ from torchvision import transforms
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 
-from DWT_IDWT.DWT_IDWT_layer import DWT_3D, IDWT_3D
+from fast_cwdm.DWT_IDWT.DWT_IDWT_layer import DWT_3D, IDWT_3D
 
 dwt = DWT_3D('haar')
 idwt = IDWT_3D('haar')

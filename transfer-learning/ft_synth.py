@@ -176,7 +176,7 @@ class FrequentSampleLogger:
             print(f"Error logging validation samples: {e}")
     
     def _log_detailed_sample(self, input_vol, target_vol, pred_vol, case_name, stage_info):
-        """Log detailed sample showing all 3 input modalities"""
+        """Log detailed sample showing all 3 input modalities - FIXED with brain masking"""
         try:
             # Get middle slice
             slice_idx = input_vol.shape[-1] // 2
@@ -188,20 +188,22 @@ class FrequentSampleLogger:
             target_slice = target_vol[0, :, :, slice_idx]
             pred_slice = pred_vol[0, :, :, slice_idx]
             
-            # Create comprehensive visualization
-            # Layout: [Input1 | Input2 | Input3 | Target | Prediction]
+            # ✅ USE BRAIN-AWARE NORMALIZATION
+            def normalize_for_visualization(img):
+                mask = img > 0.01
+                if np.any(mask):
+                    img_masked = img[mask]
+                    minv, maxv = img_masked.min(), img_masked.max()
+                    norm = np.zeros_like(img)
+                    if maxv > minv:
+                        norm[mask] = (img[mask] - minv) / (maxv - minv)
+                    return norm
+                else:
+                    return img
+            
             all_images = [input1_slice, input2_slice, input3_slice, target_slice, pred_slice]
-            
-            # Normalize each image individually for better contrast
-            normalized_images = []
-            for img in all_images:
-                img_norm = (img - img.min()) / (img.max() - img.min() + 1e-8)
-                normalized_images.append(img_norm)
-            
-            # Concatenate horizontally
+            normalized_images = [normalize_for_visualization(img) for img in all_images]
             comparison = np.concatenate(normalized_images, axis=1)
-            
-            # Convert to RGB for wandb
             comparison_rgb = np.stack([comparison] * 3, axis=-1)
             
             # Create detailed caption
@@ -213,7 +215,7 @@ class FrequentSampleLogger:
                 f"{self.target_modality} PREDICTED"
             ])
             
-            caption = f"{stage_info} | {case_name} | {modality_labels}"
+            caption = f"{stage_info} | {case_name} | {modality_labels} | BRAIN-MASKED"
             
             # Log with sample counter for easy tracking
             wandb.log({
@@ -428,13 +430,32 @@ def frequent_sample_val_epoch(model, loader, epoch, max_epochs, target_modality,
 
 
 def get_fixed_transforms(roi):
-    """Get fixed transforms that handle spatial dimensions properly"""
-    
-    # Training transform (unchanged - already works)
+    """Get fixed transforms that handle spatial dimensions properly + brain masking"""
+    from monai.transforms import MapTransform
+    class ApplyBrainMaskDict(MapTransform):
+        """Apply a brain mask to all specified keys using a reference channel and threshold."""
+        def __init__(self, keys, reference_channel=1, threshold=0.01):
+            super().__init__(keys)
+            self.reference_channel = reference_channel
+            self.threshold = threshold
+        def __call__(self, data):
+            d = dict(data)
+            ref = d[self.keys[0]][self.reference_channel] if d[self.keys[0]].ndim == 4 else d[self.keys[0]][self.reference_channel]
+            mask = (ref > self.threshold)
+            for key in self.keys:
+                arr = d[key]
+                if arr.ndim == 4:
+                    for c in range(arr.shape[0]):
+                        arr[c] = arr[c] * mask
+                else:
+                    d[key] = arr * mask
+            return d
+
     train_transform = transforms.Compose([
         transforms.LoadImaged(keys=["input_image", "target_image"]),
         transforms.EnsureChannelFirstd(keys=["target_image"]),
         transforms.NormalizeIntensityd(keys=["input_image", "target_image"], nonzero=True, channel_wise=True),
+        ApplyBrainMaskDict(keys=["input_image", "target_image"], reference_channel=1, threshold=0.01),
         transforms.CropForegroundd(
             keys=["input_image", "target_image"],
             source_key="input_image",
@@ -446,7 +467,6 @@ def get_fixed_transforms(roi):
             roi_size=[roi[0], roi[1], roi[2]],
             random_size=False,
         ),
-        # Data augmentation
         transforms.RandFlipd(keys=["input_image", "target_image"], prob=0.5, spatial_axis=0),
         transforms.RandFlipd(keys=["input_image", "target_image"], prob=0.5, spatial_axis=1),
         transforms.RandFlipd(keys=["input_image", "target_image"], prob=0.5, spatial_axis=2),
@@ -454,19 +474,18 @@ def get_fixed_transforms(roi):
         transforms.RandScaleIntensityd(keys=["input_image", "target_image"], factors=0.1, prob=0.5),
         transforms.RandShiftIntensityd(keys=["input_image", "target_image"], offsets=0.1, prob=0.5),
     ])
-    
-    # FIXED validation transform - handles spatial dimensions properly
+
     val_transform = transforms.Compose([
         transforms.LoadImaged(keys=["input_image", "target_image"]),
         transforms.EnsureChannelFirstd(keys=["target_image"]),
         transforms.NormalizeIntensityd(keys=["input_image", "target_image"], nonzero=True, channel_wise=True),
+        ApplyBrainMaskDict(keys=["input_image", "target_image"], reference_channel=1, threshold=0.01),
         transforms.CropForegroundd(
             keys=["input_image", "target_image"],
             source_key="input_image",
-            k_divisible=[32, 32, 32],  # Ensure divisible by 32 for SwinUNETR
+            k_divisible=[32, 32, 32],
             allow_smaller=True,
         ),
-        # Pad to make dimensions divisible by 32
         transforms.DivisiblePadd(
             keys=["input_image", "target_image"],
             k=32,
@@ -474,7 +493,6 @@ def get_fixed_transforms(roi):
             constant_values=0,
         ),
     ])
-    
     return train_transform, val_transform
 
 
@@ -687,6 +705,40 @@ def main():
     wandb.run.summary["version"] = "fixed_validation"
     wandb.finish()
 
+
+# ---
+# Synthesis function with brain masking for inference
+def synthesize_modality(input_data, model, device):
+    """Run synthesis inference with brain masking"""
+    import nibabel as nib
+    import torch
+    # Assume input_data is a dict with 'input_image' (list of file paths)
+    # and model is already loaded and on device
+    # Load and preprocess input images
+    imgs = [nib.load(f).get_fdata() for f in input_data["input_image"]]
+    imgs = np.stack(imgs, axis=0)  # (C, H, W, D)
+    original_shape = imgs.shape[1:]
+    # Normalize (simple min-max for demo)
+    imgs = (imgs - imgs.min()) / (imgs.max() - imgs.min() + 1e-8)
+    # Add batch/channel dims for model
+    tensor = torch.from_numpy(imgs).unsqueeze(0).float().to(device)
+    with torch.no_grad():
+        prediction = model(tensor)
+    result = prediction[0, 0].cpu().numpy()  # Remove batch and channel dims
+    # ✅ APPLY BRAIN MASKING TO RESULT
+    reference_img = nib.load(input_data["input_image"][0])
+    reference_data = reference_img.get_fdata()
+    brain_mask = reference_data > 0.01  # Simple threshold-based mask
+    result = result * brain_mask
+    # Crop back to original dimensions if needed
+    if result.shape != original_shape:
+        print(f"    Cropping from {result.shape} to {original_shape}")
+        # Simple center crop
+        min_shape = np.minimum(result.shape, original_shape)
+        start = [(result.shape[i] - min_shape[i]) // 2 for i in range(3)]
+        end = [start[i] + min_shape[i] for i in range(3)]
+        result = result[start[0]:end[0], start[1]:end[1], start[2]:end[2]]
+    return result
 
 if __name__ == "__main__":
     main()

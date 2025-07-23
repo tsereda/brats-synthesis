@@ -201,7 +201,7 @@ def parse_checkpoint_info(checkpoint_path):
     sample_schedule = "direct"
     
     # Parse filename: brats_t1n_BEST_sampled_10.pt
-    if "_BEST_" in basename:
+    if "_BEST100epoch_" in basename:
         parts = basename.split('_')
         if len(parts) >= 4:
             sample_schedule = parts[3]

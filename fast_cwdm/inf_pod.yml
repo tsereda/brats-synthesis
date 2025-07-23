@@ -69,10 +69,10 @@ spec:
 
           mkdir -p ./checkpoints
 
-          cp /data/checkpoints/brats_t1n_BEST_sampled_10.pt  ./checkpoints/
-          cp /data/checkpoints/brats_t1c_BEST_sampled_10.pt  ./checkpoints/
-          cp /data/checkpoints/brats_t2w_BEST_sampled_10.pt  ./checkpoints/
-          cp /data/checkpoints/brats_t2f_BEST_sampled_10.pt  ./checkpoints/
+          cp /data/checkpoints/brats_t1n_BEST100epoch_sampled_10.pt  ./checkpoints/
+          cp /data/checkpoints/brats_t1c_BEST100epoch_sampled_10.pt  ./checkpoints/
+          cp /data/checkpoints/brats_t2w_BEST100epoch_sampled_10.pt  ./checkpoints/
+          cp /data/checkpoints/brats_t2f_BEST100epoch_sampled_10.pt  ./checkpoints/
           ls -la ./checkpoints/
 
           python complete_dataset.py \

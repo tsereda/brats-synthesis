@@ -1,81 +1,71 @@
 #!/usr/bin/env python3
 """
-Debug script to find problematic files in BRATS dataset
+Debug script that exactly mimics the original BRATSVolumes logic
 """
 
 import os
-import glob
 
-def debug_brats_dataset(data_dir):
-    """Find files that don't match expected naming convention"""
+def debug_exact_loader_logic(directory):
+    """Mimic the EXACT logic from the original BRATSVolumes class"""
     
-    print(f"Debugging BRATS dataset in: {data_dir}")
-    print(f"Directory exists: {os.path.exists(data_dir)}")
+    print(f"Debugging EXACT loader logic in: {directory}")
     print("=" * 60)
     
-    if not os.path.exists(data_dir):
-        print(f"❌ ERROR: Directory does not exist: {data_dir}")
-        print("Available directories:")
-        parent = os.path.dirname(data_dir)
-        if os.path.exists(parent):
-            for item in os.listdir(parent):
-                print(f"  - {item}")
-        return
-    
-    # Get all .nii.gz files recursively
-    pattern = os.path.join(data_dir, "**", "*.nii.gz")
-    print(f"Searching pattern: {pattern}")
-    all_files = glob.glob(pattern, recursive=True)
-    print(f"Raw glob result: {len(all_files)} files")
-    
-    print(f"Found {len(all_files)} .nii.gz files total")
-    print()
-    
+    database = []
     problematic_files = []
-    valid_files = []
     
-    for filepath in all_files:
-        filename = os.path.basename(filepath)
+    for root, dirs, files in os.walk(directory):
+        print(f"\nProcessing directory: {root}")
+        print(f"  Subdirectories: {dirs}")
+        print(f"  Files: {len(files)}")
         
-        # Try the current parsing logic
-        try:
-            parts = filename.split('-')
-            if len(parts) < 5:
-                problematic_files.append((filepath, f"Only {len(parts)} parts: {parts}"))
-                continue
-                
-            seqtype = parts[4].split('.')[0]
-            valid_files.append((filepath, seqtype))
+        # This is the exact condition from the original code
+        if not dirs:
+            print(f"  ✅ Processing files (no subdirs): {files}")
+            files.sort()
+            datapoint = dict()
             
-        except Exception as e:
-            problematic_files.append((filepath, f"Error: {e}"))
+            # Process each file exactly like the original
+            for f in files:
+                print(f"    Processing file: {f}")
+                try:
+                    # This is the exact line that's failing
+                    parts = f.split('-')
+                    print(f"      Parts: {parts} (count: {len(parts)})")
+                    
+                    if len(parts) < 5:
+                        problematic_files.append(f"❌ {f}: Only {len(parts)} parts")
+                        continue
+                    
+                    seqtype = parts[4].split('.')[0]
+                    print(f"      ✅ seqtype: '{seqtype}'")
+                    datapoint[seqtype] = os.path.join(root, f)
+                    
+                except Exception as e:
+                    problematic_files.append(f"❌ {f}: {e}")
+                    print(f"      ❌ ERROR: {e}")
+            
+            if datapoint:
+                database.append(datapoint)
+                print(f"    Added datapoint with keys: {list(datapoint.keys())}")
+        else:
+            print(f"  ⏭️  Skipping (has subdirs)")
     
-    print(f"✅ Valid files: {len(valid_files)}")
+    print(f"\n" + "=" * 60)
+    print(f"SUMMARY:")
+    print(f"✅ Successfully processed datapoints: {len(database)}")
     print(f"❌ Problematic files: {len(problematic_files)}")
-    print()
     
     if problematic_files:
-        print("PROBLEMATIC FILES:")
-        print("-" * 40)
-        for filepath, error in problematic_files:
-            print(f"❌ {filepath}")
-            print(f"   └─ {error}")
-        print()
+        print(f"\nPROBLEMATIC FILES:")
+        for prob in problematic_files:
+            print(f"  {prob}")
     
-    if valid_files:
-        print("SAMPLE VALID FILES:")
-        print("-" * 40)
-        for filepath, seqtype in valid_files[:5]:
-            print(f"✅ {os.path.basename(filepath)} → seqtype: '{seqtype}'")
-        
-        # Show sequence type distribution
-        seqtypes = [seqtype for _, seqtype in valid_files]
-        from collections import Counter
-        counts = Counter(seqtypes)
-        print(f"\nSequence type distribution:")
-        for seqtype, count in counts.items():
-            print(f"  {seqtype}: {count}")
+    if database:
+        print(f"\nSAMPLE DATAPOINTS:")
+        for i, dp in enumerate(database[:3]):
+            print(f"  {i+1}. Keys: {list(dp.keys())}")
 
 if __name__ == "__main__":
-    data_dir = "./datasets/BRATS2023/training"
-    debug_brats_dataset(data_dir)
+    directory = "./datasets/BRATS2023/training"
+    debug_exact_loader_logic(directory)

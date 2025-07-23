@@ -336,7 +336,7 @@ class TrainLoop:
                         print(f"Error removing old checkpoint: {e}")
             
             # Save new best checkpoint
-            filename = f"brats_{modality}_BEST_{self.sample_schedule}_{self.diffusion_steps}.pt"
+            filename = f"brats_{modality}_BEST100epoch_{self.sample_schedule}_{self.diffusion_steps}.pt"
             full_save_path = os.path.join(self.checkpoint_dir, filename)
             
             try:

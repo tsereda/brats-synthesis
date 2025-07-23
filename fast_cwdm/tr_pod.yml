@@ -71,33 +71,12 @@ spec:
           # Create target directories
           mkdir -p datasets/BRATS2023
           
-          # Extract both datasets directly to BRATS2023 directory
-          training_zip="/data/ASNR-MICCAI-BraTS2023-GLI-Challenge-TrainingData.zip"
-          if [ -f "$training_zip" ]; then
-            echo "Extracting training data..."
-            7z x "$training_zip" -o"datasets/BRATS2023/" -y
-            echo "Training data extracted successfully"
-          fi
-          
-          validation_zip="/data/ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData.zip"
-          if [ -f "$validation_zip" ]; then
-            echo "Extracting validation data..."
-            7z x "$validation_zip" -o"datasets/BRATS2023/" -y
-            echo "Validation data extracted successfully"
-          fi
-          
-          # Create symlinks to maintain expected directory structure
-          if [ -d "datasets/BRATS2023/ASNR-MICCAI-BraTS2023-GLI-Challenge-TrainingData" ]; then
-            ln -sf ASNR-MICCAI-BraTS2023-GLI-Challenge-TrainingData datasets/BRATS2023/training
-          fi
-          
-          if [ -d "datasets/BRATS2023/ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData" ]; then
-            ln -sf ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData datasets/BRATS2023/validation
-          fi
+          7z x /data/ASNR-MICCAI-BraTS2023-GLI-MET-TrainingData.zip
+          7z x /data/ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData.zip
           
           echo "Training patients: $(ls datasets/BRATS2023/training/ | wc -l)"
           echo "Validation patients: $(ls datasets/BRATS2023/validation/ | wc -l)"
-          echo "Sample training patient files: $(ls datasets/BRATS2023/training/BraTS-GLI-00000-000/ | wc -l)"
+          echo "Sample training patient files: $(ls datasets/BRATS2023/training/BraTS-GLI-MET-00000-000/ | wc -l)"
           
           pip install pyyaml torch tqdm numpy nibabel wandb matplotlib blobfile tensorboard
           
@@ -124,7 +103,7 @@ spec:
 
           echo "Training patients: $(ls datasets/BRATS2023/training/ | wc -l)"
           echo "Validation patients: $(ls datasets/BRATS2023/validation/ | wc -l)"
-          echo "Sample training patient files: $(ls datasets/BRATS2023/training/BraTS-GLI-00000-000/ | wc -l)"
+          echo "Sample training patient files: $(ls datasets/BRATS2023/training/BraTS-GLI-MET-00000-000/ | wc -l)"
 
           bash run.sh --sampling-strategy direct --timesteps 1000 --mode train --train_modality all
           
@@ -158,7 +137,7 @@ spec:
         sizeLimit: 50Gi
     - name: data
       persistentVolumeClaim:
-        claimName: brats2025-3
+        claimName: brats2025-2
     - name: shm
       emptyDir:
         medium: Memory

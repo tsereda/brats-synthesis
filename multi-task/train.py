@@ -587,7 +587,7 @@ def multitask_val_epoch(model, loader, epoch, max_epochs, target_modality, logge
                 dice_scores, not_nans = dice_metric.aggregate()
                 
                 if isinstance(dice_scores, torch.Tensor):
-                    # Get dice for each class and compute mean
+                    not_nans = not_nans.bool()
                     valid_dice = dice_scores[not_nans] if torch.any(not_nans) else dice_scores
                     dice_avg = valid_dice.mean().item() if len(valid_dice) > 0 else 0.0
                 else:

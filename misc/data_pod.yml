@@ -26,8 +26,12 @@ spec:
       command: ["/bin/bash", "-c"]
       args:
         - |
+         
+          pip install --upgrade synapseclient 
 
-
+          # run the below in kubectl exec -- bash s
+          # synapse get syn51669979  
+          # will prompt for token obtained at https://accounts.synapse.org/authenticated/personalaccesstokens
 
           tail -f /dev/null
       
@@ -44,6 +48,13 @@ spec:
           mountPath: /data5
         - name: shm
           mountPath: /dev/shm
+      resources:
+        requests:
+          memory: 24Gi      
+          cpu: "12"     
+        limits:
+          memory: 32Gi
+          cpu: "16"
       
   
   volumes:

@@ -163,7 +163,7 @@ def load_available_modalities(case_dir, missing_modality, evaluation_mode=False)
 def find_checkpoint(missing_modality, checkpoint_dir):
     """Find the best checkpoint for the missing modality."""
     # Look for BEST checkpoints first
-    pattern = f"brats_{missing_modality}_BEST_*.pt"
+    pattern = f"brats_{missing_modality}_BEST100epoch_*.pt"
     best_files = glob.glob(os.path.join(checkpoint_dir, pattern))
     
     if best_files:
@@ -200,7 +200,7 @@ def parse_checkpoint_info(checkpoint_path):
     diffusion_steps = 1000
     sample_schedule = "direct"
     
-    # Parse filename: brats_t1n_BEST_sampled_10.pt
+    # Parse filename: brats_t1n_BEST100epoch_sampled_10.pt
     if "_BEST100epoch_" in basename:
         parts = basename.split('_')
         if len(parts) >= 4:

@@ -18,8 +18,15 @@ spec:
             values:
             - NVIDIA-A10
             - NVIDIA-GeForce-RTX-3090
-            - NVIDIA-L40
+            - NVIDIA-GeForce-RTX-4090
+            - NVIDIA-TITAN-RTX
+            - NVIDIA-RTX-A5000
+            - Quadro-RTX-6000
+            - Tesla-V100-SXM2-32GB
             - NVIDIA-A40
+            - NVIDIA-L40
+            - NVIDIA-RTX-A6000
+            - Quadro-RTX-8000
 
   tolerations:
     - key: nvidia.com/gpu
@@ -32,9 +39,9 @@ spec:
       image: gitlab-registry.nrp-nautilus.io/prp/jupyter-stack/prp
       env:
         - name: REPO_PATH
-          value: /app/fast-cwdm
+          value: /app/brats-synthesis
         - name: PYTHONPATH
-          value: /app/fast-cwdm
+          value: /app/brats-synthesis
         - name: CUDA_VISIBLE_DEVICES
           value: "0"
         - name: nnUNet_raw
@@ -53,30 +60,34 @@ spec:
               name: wandb-credentials
               key: api-key
         - name: WANDB_PROJECT
-          value: "cwmd-3d-brats"
+          value: "fast-cwmd"
         - name: WANDB_ENTITY
           value: "timgsereda"
         - name: WANDB_MODE
           value: "online"
-        - name: USE_TENSORBOARD
-          value: "true"
+
       command: ["/bin/bash", "-c"]
       args:
         - |
-          git clone -b eval2 https://github.com/tsereda/fast-cwdm.git ${REPO_PATH}
+          git clone https://github.com/tsereda/brats-synthesis.git ${REPO_PATH}
           cd ${REPO_PATH}
           
           sudo apt-get update && sudo apt-get install -y p7zip-full wget git
           
           # Create target directories
-          mkdir -p datasets/BRATS2023
+          mkdir -p datasets/BRATS2023/training
+          mkdir -p datasets/BRATS2023/validation
           
+          # Extract and move to correct locations  
           7z x /data/ASNR-MICCAI-BraTS2023-GLI-MET-TrainingData.zip
           7z x /data/ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData.zip
           
+          # Move to expected locations
+          mv ASNR-MICCAI-BraTS2023-GLI-MET-TrainingData/* datasets/BRATS2023/training/
+          mv ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData/* datasets/BRATS2023/validation/
+          
           echo "Training patients: $(ls datasets/BRATS2023/training/ | wc -l)"
           echo "Validation patients: $(ls datasets/BRATS2023/validation/ | wc -l)"
-          echo "Sample training patient files: $(ls datasets/BRATS2023/training/BraTS-GLI-MET-00000-000/ | wc -l)"
           
           pip install pyyaml torch tqdm numpy nibabel wandb matplotlib blobfile tensorboard
           
@@ -93,19 +104,11 @@ spec:
           conda info --envs
           python --version
 
-          LOGDIR="/data/runs"
-          if [ "$USE_TENSORBOARD" = "true" ]; then
-            echo "Launching TensorBoard on port 6006, logdir: $LOGDIR"
-            tensorboard --logdir "$LOGDIR" --host 0.0.0.0 --port 6006 &
-            echo "To access TensorBoard, run:"
-            echo "kubectl port-forward pod/cwdm-brats 6006:6006"
-          fi
-
           echo "Training patients: $(ls datasets/BRATS2023/training/ | wc -l)"
           echo "Validation patients: $(ls datasets/BRATS2023/validation/ | wc -l)"
-          echo "Sample training patient files: $(ls datasets/BRATS2023/training/BraTS-GLI-MET-00000-000/ | wc -l)"
+          echo "Sample training patient files: $(ls datasets/BRATS2023/training/$(ls datasets/BRATS2023/training/ | head -1)/ | wc -l)"
 
-          bash run.sh --sampling-strategy direct --timesteps 1000 --mode train --train_modality all
+          bash fast_cwdm/run.sh --sampling-strategy direct --timesteps 1000 --mode train --train_modality all
           
           ls -la /data/checkpoints/
 

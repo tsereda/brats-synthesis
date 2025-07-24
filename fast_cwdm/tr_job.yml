@@ -98,6 +98,7 @@ spec:
               
               mv datasets/ fast_cwdm/
               cd fast_cwdm
+              python scripts/check_data_integrity.py --data_dir datasets/BRATS2023/training
               bash run.sh --sampling-strategy sampled --timesteps 10 --mode train --train_modality all
 
               ls -la /data/checkpoints/

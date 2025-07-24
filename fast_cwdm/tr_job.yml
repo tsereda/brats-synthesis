@@ -1,9 +1,9 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: fast-cwdm-t1n
+  name: fast-cwdm-t2f
   labels:
-    app: fast-cwdm-t1n
+    app: fast-cwdm-t2f
 spec:
   backoffLimit: 0
   template:
@@ -65,6 +65,8 @@ spec:
               mkdir -p datasets/BRATS2023/training
               mkdir -p datasets/BRATS2023/validation
               
+              ls -la /data/
+
               7z x /data/ASNR-MICCAI-BraTS2023-GLI-MET-TrainingData.zip
               7z x /data/ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData.zip
 
@@ -100,7 +102,7 @@ spec:
               cd fast_cwdm
               rm -rf datasets/BRATS2023/training/BraTS-MET-00232-000/
               #python scripts/check_data_integrity.py --data_dir datasets/BRATS2023/training
-              bash run.sh --sampling-strategy sampled --timesteps 100 --mode train --train_modality t1n #"t1n" "t1c" "t2w" "t2f"
+              bash run.sh --sampling-strategy sampled --timesteps 100 --mode train --train_modality t2f #"t1n" "t1c" "t2w" "t2f"
 
               ls -la /data/checkpoints/
 
@@ -130,7 +132,7 @@ spec:
             sizeLimit: 50Gi
         - name: data
           persistentVolumeClaim:
-            claimName: brats2025-3
+            claimName: brats2025-5
         - name: shm
           emptyDir:
             medium: Memory

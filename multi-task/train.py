@@ -574,25 +574,40 @@ def multitask_val_epoch(model, loader, epoch, max_epochs, target_modality, logge
                 run_synth_psnr.update(psnr_val, n=input_data.shape[0])
                 run_synth_ssim.update(ssim_val, n=input_data.shape[0])
 
-                # Segmentation metrics
+                # Segmentation metrics (robust Dice calculation)
                 pred_seg_softmax = post_softmax(pred_segmentation_raw)
                 pred_seg_discrete = post_pred_seg(pred_seg_softmax)
 
-                # FIX 3: Ensure target segmentation is in correct format {0,1,2,3}
-                # BraTS labels should already be converted during data loading
-                
-                # Calculate dice score
-                dice_metric.reset()
-                dice_metric(y_pred=pred_seg_discrete, y=target_segmentation)
-                dice_scores, not_nans = dice_metric.aggregate()
-                
-                if isinstance(dice_scores, torch.Tensor):
-                    not_nans = not_nans.bool()
-                    valid_dice = dice_scores[not_nans] if torch.any(not_nans) else dice_scores
-                    dice_avg = valid_dice.mean().item() if len(valid_dice) > 0 else 0.0
+                # --- Robust Dice calculation with label/shape fix ---
+                target_seg_fixed = target_segmentation.clone()
+                if target_seg_fixed.dim() == 5 and target_seg_fixed.shape[1] == 1:
+                    target_seg_fixed = target_seg_fixed.squeeze(1)
+                # BraTS label conversion: {0,1,2,4} → {0,1,2,3}
+                target_seg_fixed[target_seg_fixed == 4] = 3
+
+                pred_seg_for_dice = pred_seg_discrete.clone()
+                if pred_seg_for_dice.dim() == 5 and pred_seg_for_dice.shape[1] == 1:
+                    pred_seg_for_dice = pred_seg_for_dice.squeeze(1)
+
+                # DEBUG: Print to see what's happening
+                print(f"  Target shape: {target_seg_fixed.shape}, unique: {torch.unique(target_seg_fixed)}")
+                print(f"  Pred shape: {pred_seg_for_dice.shape}, unique: {torch.unique(pred_seg_for_dice)}")
+
+                dice_metric_fixed = DiceMetric(
+                    include_background=True,  # Try including background
+                    reduction=MetricReduction.MEAN,
+                    get_not_nans=True
+                )
+                dice_metric_fixed.reset()
+                dice_metric_fixed(y_pred=pred_seg_for_dice, y=target_seg_fixed)
+                dice_scores, not_nans = dice_metric_fixed.aggregate()
+
+                if isinstance(dice_scores, torch.Tensor) and len(dice_scores) > 1:
+                    # If include_background=True, skip background class (index 0)
+                    dice_avg = dice_scores[1:].mean().item()
                 else:
-                    dice_avg = float(dice_scores) if dice_scores is not None else 0.0
-                
+                    dice_avg = dice_scores.mean().item() if isinstance(dice_scores, torch.Tensor) else float(dice_scores)
+
                 all_dice_scores.append(dice_avg)
 
                 # Collect samples for logging

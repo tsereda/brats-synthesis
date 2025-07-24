@@ -67,8 +67,11 @@ spec:
               
               ls -la /data/
 
-              7z x /data/ASNR-MICCAI-BraTS2023-GLI-MET-TrainingData.zip
-              7z x /data/ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData.zip
+              7z x /data/ASNR-MICCAI-BraTS2023-GLI-MET-TrainingData.tar.gz
+              7z x /data/ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData.tar.gz
+
+              7z x ASNR-MICCAI-BraTS2023-GLI-MET-TrainingData.tar
+              7z x ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData.tar
 
               mv ASNR-MICCAI-BraTS2023-GLI-MET-TrainingData/* datasets/BRATS2023/training/
               mv ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData/* datasets/BRATS2023/validation/

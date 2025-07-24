@@ -98,8 +98,9 @@ spec:
               
               mv datasets/ fast_cwdm/
               cd fast_cwdm
+              rm -rf datasets/BRATS2023/training/BraTS-MET-00232-000/
               python scripts/check_data_integrity.py --data_dir datasets/BRATS2023/training
-              bash run.sh --sampling-strategy sampled --timesteps 10 --mode train --train_modality all
+              bash run.sh --sampling-strategy sampled --timesteps 100 --mode train --train_modality t1n #"t1n" "t1c" "t2w" "t2f"
 
               ls -la /data/checkpoints/
 

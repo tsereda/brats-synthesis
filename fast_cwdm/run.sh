@@ -104,7 +104,7 @@ elif [[ $MODE == 'auto' ]]; then
     echo "DATASET NOT FOUND -> Check the supported datasets again";
   fi
 fi
-
+#74500
 # Define common arguments (after variables are set)
 COMMON="
 --dataset=${DATASET}
@@ -135,7 +135,7 @@ COMMON="
 "
 
 TRAIN="
---lr_anneal_steps=74500
+--lr_anneal_steps=1000  
 --data_dir=${DATA_DIR}
 --resume_checkpoint=
 --resume_step=0

@@ -163,7 +163,7 @@ def load_available_modalities(case_dir, missing_modality, evaluation_mode=False)
 def find_checkpoint(missing_modality, checkpoint_dir):
     """Find the best checkpoint for the missing modality."""
     # Look for BEST checkpoints first
-    pattern = f"brats_{missing_modality}_BEST100epoch_*.pt"
+    pattern = f"brats_{missing_modality}_*.pt"
     best_files = glob.glob(os.path.join(checkpoint_dir, pattern))
     
     if best_files:

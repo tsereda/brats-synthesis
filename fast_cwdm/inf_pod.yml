@@ -84,9 +84,7 @@ spec:
             --input_dir ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData \
             --checkpoint_dir ./checkpoints \
             --device cuda:0 \
-            --evaluation_mode \
-            --max_cases 50
-
+            --evaluation_mode
           tail -f /dev/null
      
       volumeMounts:

@@ -114,7 +114,7 @@ spec:
             sizeLimit: 50Gi
         - name: data
           persistentVolumeClaim:
-            claimName: brats2025-1
+            claimName: brats2025-3
         - name: shm
           emptyDir:
             medium: Memory

@@ -724,7 +724,7 @@ def train_single_multitask_model(target_modality, save_dir, max_epochs=50, batch
     print(f"Using device: {device}")
     
     base_dir = "/app/brats-synthesis"
-    data_dir = os.path.join(base_dir, "ASNR-MICCAI-BraTS2023-GLI-Challenge-TrainingData")
+    data_dir = os.path.join(base_dir, "ASNR-MICCAI-BraTS2023-GLI-MET-Challenge-TrainingData")
     all_cases = find_multitask_cases(data_dir, target_modality=target_modality)
     
     if not all_cases:

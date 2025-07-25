@@ -1,9 +1,9 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: fast-cwdm-test
+  name: fast-cwdm
   labels:
-    app: fast-cwdm-test
+    app: fast-cwdm
 spec:
   nodeSelector:
     #topology.kubernetes.io/region: us-west
@@ -69,58 +69,58 @@ spec:
       command: ["/bin/bash", "-c"]
       args:
         - |
-          # git clone https://github.com/tsereda/brats-synthesis.git ${REPO_PATH}
-          # cd ${REPO_PATH}
+          git clone https://github.com/tsereda/brats-synthesis.git ${REPO_PATH}
+          cd ${REPO_PATH}
 
-          # sudo apt-get update && sudo apt-get install -y p7zip-full wget git
+          sudo apt-get update && sudo apt-get install -y p7zip-full wget git
 
-          # # Create target directories
-          # sudo mkdir -p /data/checkpoints
-          # sudo mkdir -p /data/results
-          # mkdir -p datasets/BRATS2023/training
-          # mkdir -p datasets/BRATS2023/validation
+          # Create target directories
+          sudo mkdir -p /data/checkpoints
+          sudo mkdir -p /data/results
+          mkdir -p datasets/BRATS2023/training
+          mkdir -p datasets/BRATS2023/validation
 
-          # # Extract and move to correct locations  
-          # 7z x /data/ASNR-MICCAI-BraTS2023-GLI-MET-TrainingData.zip
-          # 7z x /data/ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData.zip
+          # Extract and move to correct locations  
+          7z x /data/ASNR-MICCAI-BraTS2023-GLI-MET-TrainingData.zip
+          7z x /data/ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData.zip
 
-          # # Move to expected locations
-          # mv ASNR-MICCAI-BraTS2023-GLI-MET-TrainingData/* datasets/BRATS2023/training/
-          # mv ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData/* datasets/BRATS2023/validation/
+          # Move to expected locations
+          mv ASNR-MICCAI-BraTS2023-GLI-MET-TrainingData/* datasets/BRATS2023/training/
+          mv ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData/* datasets/BRATS2023/validation/
 
-          # # Clean up any hidden files that might cause issues
-          # find datasets/BRATS2023/training -name ".*" -delete 2>/dev/null || true
-          # find datasets/BRATS2023/validation -name ".*" -delete 2>/dev/null || true
+          # Clean up any hidden files that might cause issues
+          find datasets/BRATS2023/training -name ".*" -delete 2>/dev/null || true
+          find datasets/BRATS2023/validation -name ".*" -delete 2>/dev/null || true
 
-          # echo "Training patients: $(ls datasets/BRATS2023/training/ | wc -l)"
-          # echo "Validation patients: $(ls datasets/BRATS2023/validation/ | wc -l)"
+          echo "Training patients: $(ls datasets/BRATS2023/training/ | wc -l)"
+          echo "Validation patients: $(ls datasets/BRATS2023/validation/ | wc -l)"
 
-          # pip install pyyaml torch tqdm numpy nibabel wandb matplotlib blobfile tensorboard
+          pip install pyyaml torch tqdm numpy nibabel wandb matplotlib blobfile tensorboard
 
-          # python -c "import wandb; print(f'W&B version: {wandb.__version__}')"
-          # python -c "import torch; print(f'GPUs available: {torch.cuda.device_count()}')"
+          python -c "import wandb; print(f'W&B version: {wandb.__version__}')"
+          python -c "import torch; print(f'GPUs available: {torch.cuda.device_count()}')"
 
-          # conda init bash
-          # source ~/.bashrc
+          conda init bash
+          source ~/.bashrc
 
-          # mamba env create -f environment.yml
+          mamba env create -f environment.yml
 
-          # conda activate cwdm
+          conda activate cwdm
 
-          # conda info --envs
-          # python --version
+          conda info --envs
+          python --version
 
-          # echo "Training patients: $(ls datasets/BRATS2023/training/ | wc -l)"
-          # echo "Validation patients: $(ls datasets/BRATS2023/validation/ | wc -l)"
-          # echo "Sample training patient files: $(ls datasets/BRATS2023/training/$(ls datasets/BRATS2023/training/ | head -1)/ | wc -l)"
+          echo "Training patients: $(ls datasets/BRATS2023/training/ | wc -l)"
+          echo "Validation patients: $(ls datasets/BRATS2023/validation/ | wc -l)"
+          echo "Sample training patient files: $(ls datasets/BRATS2023/training/$(ls datasets/BRATS2023/training/ | head -1)/ | wc -l)"
           
-          # mv datasets/ fast_cwdm/
-          # cd fast_cwdm
-          # bash run.sh --sampling-strategy direct --timesteps 1000 --mode train --train_modality all
+          mv datasets/ fast_cwdm/
+          cd fast_cwdm
+          bash run.sh --sampling-strategy direct --timesteps 1000 --mode train --train_modality all
 
-          # ls -la /data/checkpoints/
+          ls -la /data/checkpoints/
 
-          # echo "Job completed successfully"
+          echo "Job completed successfully"
 
           tail -f /dev/null
      
@@ -148,7 +148,7 @@ spec:
         sizeLimit: 50Gi
     - name: data
       persistentVolumeClaim:
-        claimName: brats2025-5
+        claimName: brats2025-3
     - name: shm
       emptyDir:
         medium: Memory

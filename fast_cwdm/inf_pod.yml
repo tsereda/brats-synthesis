@@ -18,8 +18,15 @@ spec:
             values:
             - NVIDIA-A10
             - NVIDIA-GeForce-RTX-3090
-            - NVIDIA-L40
+            - NVIDIA-GeForce-RTX-4090
+            - NVIDIA-TITAN-RTX
+            - NVIDIA-RTX-A5000
+            - Quadro-RTX-6000
+            - Tesla-V100-SXM2-32GB
             - NVIDIA-A40
+            - NVIDIA-L40
+            - NVIDIA-RTX-A6000
+            - Quadro-RTX-8000
 
   tolerations:
     - key: nvidia.com/gpu
@@ -59,24 +66,22 @@ spec:
           sudo apt-get update && sudo apt-get install -y p7zip-full wget git
           pip install nibabel blobfile wandb batchgenerators simpleITK gdown monai
 
-          git clone -b cwdmssim https://github.com/tsereda/brats-synthesis.git ${REPO_PATH}
+          git clone https://github.com/tsereda/brats-synthesis.git ${REPO_PATH}
           cd ${REPO_PATH}
 
-          cp /data/ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData.zip ./ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData.zip
-          7z x ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData.zip -y
+          7z x /data/ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData.tar.gz
 
-          python fast-cwdm/scripts/drop_modality.py
+          7z x ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData.tar
+
+          python fast_cwdm/scripts/drop_modality.py --drop_modality t1n --input_dir ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData --output_dir ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData-missingt1n
 
           mkdir -p ./checkpoints
 
-          cp /data/checkpoints/brats_t1n_BEST100epoch_sampled_10.pt  ./checkpoints/
-          cp /data/checkpoints/brats_t1c_BEST100epoch_sampled_10.pt  ./checkpoints/
-          cp /data/checkpoints/brats_t2w_BEST100epoch_sampled_10.pt  ./checkpoints/
-          cp /data/checkpoints/brats_t2f_BEST100epoch_sampled_10.pt  ./checkpoints/
+          cp /data/brats_t1n_069850_sampled_100.pt  ./checkpoints/
           ls -la ./checkpoints/
 
           python complete_dataset.py \
-            --input_dir ASNR-MICCAI-BraTS2023-GLI-Challenge-ValidationData \
+            --input_dir ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData-missingt1n \
             --checkpoint_dir ./checkpoints \
             --device cuda:0 \
             --evaluation_mode \
@@ -108,7 +113,7 @@ spec:
         sizeLimit: 50Gi
     - name: data
       persistentVolumeClaim:
-        claimName: brats2025-5
+        claimName: brats2025-2
     - name: shm
       emptyDir:
         medium: Memory

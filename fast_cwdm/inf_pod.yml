@@ -73,15 +73,15 @@ spec:
 
           7z x ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData.tar
 
-          python fast_cwdm/scripts/drop_modality.py --drop_modality t1n --input_dir ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData --output_dir ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData-missingt1n
+          #python fast_cwdm/scripts/drop_modality.py --drop_modality t1n --input_dir ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData --output_dir ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData-missingt1n
 
           mkdir -p ./checkpoints
 
           cp /data/brats_t1n_069850_sampled_100.pt  ./checkpoints/
           ls -la ./checkpoints/
 
-          python complete_dataset.py \
-            --input_dir ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData-missingt1n \
+          python fast_cwdm/scripts/complete_dataset.py \
+            --input_dir ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData \
             --checkpoint_dir ./checkpoints \
             --device cuda:0 \
             --evaluation_mode \

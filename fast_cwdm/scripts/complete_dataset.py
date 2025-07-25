@@ -3,6 +3,7 @@
 Enhanced medical image synthesis script with SSIM evaluation
 Adds comprehensive metrics including SSIM for Fast-CWDM evaluation
 Now supports both real synthesis and evaluation modes
+FIXED: Proper checkpoint parsing for sampled_X.pt format
 """
 
 import argparse
@@ -13,6 +14,7 @@ import torch as th
 import glob
 import sys
 import random
+import re
 
 sys.path.append(".")
 
@@ -168,7 +170,7 @@ def find_checkpoint(missing_modality, checkpoint_dir):
     
     if best_files:
         checkpoint = best_files[0]
-        print(f"Found BEST checkpoint: {checkpoint}")
+        print(f"Found checkpoint: {checkpoint}")
         return checkpoint
     
     # Fallback to regular checkpoints
@@ -193,14 +195,18 @@ def find_checkpoint(missing_modality, checkpoint_dir):
 
 
 def parse_checkpoint_info(checkpoint_path):
-    """Parse checkpoint filename to get training parameters."""
+    """Parse checkpoint filename to get training parameters - FIXED VERSION."""
     basename = os.path.basename(checkpoint_path)
     
     # Default values
     diffusion_steps = 1000
     sample_schedule = "direct"
     
-    # Parse filename: brats_t1n_BEST100epoch_sampled_10.pt
+    print(f"Parsing checkpoint: {basename}")
+    
+    # Handle different checkpoint naming patterns
+    
+    # Pattern 1: brats_t1n_BEST100epoch_sampled_10.pt
     if "_BEST100epoch_" in basename:
         parts = basename.split('_')
         if len(parts) >= 4:
@@ -211,7 +217,26 @@ def parse_checkpoint_info(checkpoint_path):
             except ValueError:
                 pass
     
-    print(f"Checkpoint config: schedule={sample_schedule}, steps={diffusion_steps}")
+    # Pattern 2: brats_t1c_074500_sampled_100.pt (YOUR FORMAT)
+    elif "_sampled_" in basename:
+        parts = basename.split('_')
+        for i, part in enumerate(parts):
+            if part == "sampled" and i + 1 < len(parts):
+                try:
+                    diffusion_steps = int(parts[i + 1].split('.')[0])
+                    sample_schedule = "direct"  # Assume direct sampling
+                    break
+                except ValueError:
+                    pass
+    
+    # Pattern 3: Look for any number after "sampled" using regex
+    else:
+        match = re.search(r'sampled[_-](\d+)', basename)
+        if match:
+            diffusion_steps = int(match.group(1))
+            sample_schedule = "direct"
+    
+    print(f"✅ Checkpoint config: schedule={sample_schedule}, steps={diffusion_steps}")
     return sample_schedule, diffusion_steps
 
 
@@ -319,12 +344,17 @@ def prepare_conditioning(available_modalities, missing_modality, device):
     return cond
 
 
-def synthesize_modality(available_modalities, missing_modality, checkpoint_path, device, metrics_calculator=None, target_data=None):
+def synthesize_modality(available_modalities, missing_modality, checkpoint_path, device, metrics_calculator=None, target_data=None, override_steps=None):
     """Synthesize the missing modality with comprehensive metrics."""
     print(f"\n=== Synthesizing {missing_modality} ===")
     
     # Parse checkpoint info
     sample_schedule, diffusion_steps = parse_checkpoint_info(checkpoint_path)
+    
+    # Override steps if specified
+    if override_steps:
+        diffusion_steps = override_steps
+        print(f"🔧 Overriding diffusion steps to: {diffusion_steps}")
     
     # Create model
     args = create_model_args(sample_schedule, diffusion_steps)
@@ -352,7 +382,7 @@ def synthesize_modality(available_modalities, missing_modality, checkpoint_path,
     print(f"Conditioning shape: {cond.shape}")
     
     # Sample using p_sample_loop_progressive (correct method for Fast-DDPM)
-    print(f"Running {diffusion.num_timesteps}-step sampling...")
+    print(f"🚀 Running {diffusion.num_timesteps}-step sampling...")
     with th.no_grad():
         final_sample = None
         for sample_dict in diffusion.p_sample_loop_progressive(
@@ -469,7 +499,7 @@ def save_result(synthesized, case_dir, missing_modality, output_dir):
 
 
 def process_case(case_dir, output_dir, checkpoint_dir, device, metrics_calculator=None, 
-                evaluation_mode=False, target_modality=None):
+                evaluation_mode=False, target_modality=None, override_steps=None):
     """Process a single case with optional metrics evaluation."""
     case_name = os.path.basename(case_dir)
     print(f"\n=== Processing {case_name} ===")
@@ -513,7 +543,7 @@ def process_case(case_dir, output_dir, checkpoint_dir, device, metrics_calculato
         # Synthesize
         synthesized, metrics = synthesize_modality(
             available_modalities, missing_modality, checkpoint_path, device,
-            metrics_calculator, target_data
+            metrics_calculator, target_data, override_steps
         )
         
         # Save result (skip in evaluation mode to avoid overwriting originals)
@@ -547,6 +577,8 @@ def main():
                         help="Specific modality to synthesize in evaluation mode (random if not specified)")
     parser.add_argument("--seed", type=int, default=42,
                         help="Random seed for reproducible evaluation")
+    parser.add_argument("--diffusion_steps", type=int, default=None,
+                        help="Override diffusion steps (default: parse from checkpoint)")
     
     args = parser.parse_args()
     
@@ -562,6 +594,9 @@ def main():
         args.evaluate_metrics = True
     else:
         print(f"🔧 SYNTHESIS MODE: Using incomplete dataset")
+    
+    if args.diffusion_steps:
+        print(f"🎯 Overriding diffusion steps: {args.diffusion_steps}")
     
     print(f"🔧 Enhanced synthesis with comprehensive metrics")
     
@@ -589,7 +624,7 @@ def main():
         case_dir = os.path.join(args.input_dir, case_dir_name)
         success, metrics = process_case(
             case_dir, args.output_dir, args.checkpoint_dir, device,
-            metrics_calculator, args.evaluation_mode, args.target_modality
+            metrics_calculator, args.evaluation_mode, args.target_modality, args.diffusion_steps
         )
         
         if success:

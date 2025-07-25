@@ -15,6 +15,7 @@ import glob
 import sys
 import random
 import re
+import time
 
 sys.path.append(".")
 
@@ -383,6 +384,10 @@ def synthesize_modality(available_modalities, missing_modality, checkpoint_path,
     
     # Sample using p_sample_loop_progressive (correct method for Fast-DDPM)
     print(f"🚀 Running {diffusion.num_timesteps}-step sampling...")
+    
+    # Start timing
+    sample_start_time = time.time()
+    
     with th.no_grad():
         final_sample = None
         for sample_dict in diffusion.p_sample_loop_progressive(
@@ -397,6 +402,18 @@ def synthesize_modality(available_modalities, missing_modality, checkpoint_path,
             final_sample = sample_dict
         
         sample = final_sample["sample"]
+    
+    # End timing
+    sample_end_time = time.time()
+    sample_duration = sample_end_time - sample_start_time
+    
+    print(f"⏱️ Sampling completed in {sample_duration:.2f} seconds ({sample_duration/60:.2f} minutes)")
+    
+    # Return timing info along with other data
+    timing_info = {
+        'sample_time': sample_duration,
+        'steps': diffusion.num_timesteps
+    }
     
     print(f"Sample shape: {sample.shape}")
     
@@ -445,6 +462,12 @@ def synthesize_modality(available_modalities, missing_modality, checkpoint_path,
         print(f"  MSE: {metrics['mse']:.6f}")
         print(f"  PSNR: {metrics['psnr']:.2f} dB")
         print(f"  SSIM: {metrics['ssim']:.4f}")
+    
+    # Add timing info to metrics
+    if metrics:
+        metrics.update(timing_info)
+    else:
+        metrics = timing_info
     
     return spatial_sample, metrics
 
@@ -619,9 +642,20 @@ def main():
     
     successful = 0
     all_metrics = {modality: [] for modality in MODALITIES}
+    sample_times = []
+    total_start_time = time.time()
     
-    for case_dir_name in case_dirs:
+    for i, case_dir_name in enumerate(case_dirs):
         case_dir = os.path.join(args.input_dir, case_dir_name)
+        
+        # Show progress and ETA
+        if i > 0 and sample_times:
+            avg_time = np.mean(sample_times)
+            remaining_cases = len(case_dirs) - i
+            eta_seconds = avg_time * remaining_cases
+            eta_minutes = eta_seconds / 60
+            print(f"\n📊 Progress: {i}/{len(case_dirs)} | Avg: {avg_time:.1f}s/case | ETA: {eta_minutes:.1f} min")
+        
         success, metrics = process_case(
             case_dir, args.output_dir, args.checkpoint_dir, device,
             metrics_calculator, args.evaluation_mode, args.target_modality, args.diffusion_steps
@@ -629,6 +663,11 @@ def main():
         
         if success:
             successful += 1
+            # Track sample times
+            if 'sample_time' in metrics:
+                sample_times.append(metrics['sample_time'])
+                print(f"⏱️ Case sample time: {metrics['sample_time']:.2f}s")
+            
             # Collect metrics if available
             if metrics:
                 if args.evaluation_mode:
@@ -641,8 +680,30 @@ def main():
                     if missing_modality:
                         all_metrics[missing_modality].append(metrics)
     
+    total_end_time = time.time()
+    total_duration = total_end_time - total_start_time
+    
     print(f"\n=== Summary ===")
     print(f"Successful: {successful}/{len(case_dirs)}")
+    print(f"Total time: {total_duration:.2f} seconds ({total_duration/60:.2f} minutes)")
+    
+    # Print timing statistics
+    if sample_times:
+        avg_sample_time = np.mean(sample_times)
+        min_sample_time = np.min(sample_times)
+        max_sample_time = np.max(sample_times)
+        std_sample_time = np.std(sample_times)
+        
+        print(f"\n=== TIMING STATISTICS ===")
+        print(f"Average sample time: {avg_sample_time:.2f} ± {std_sample_time:.2f} seconds")
+        print(f"Fastest sample: {min_sample_time:.2f} seconds")
+        print(f"Slowest sample: {max_sample_time:.2f} seconds")
+        print(f"Total synthesis time: {sum(sample_times):.2f} seconds")
+        print(f"Overhead time: {total_duration - sum(sample_times):.2f} seconds")
+        
+        if successful > 0:
+            throughput = successful / (total_duration / 3600)  # cases per hour
+            print(f"Throughput: {throughput:.1f} cases/hour")
     
     # Print comprehensive metrics summary
     if args.evaluate_metrics and any(all_metrics.values()):
@@ -650,22 +711,33 @@ def main():
         for modality, metrics_list in all_metrics.items():
             if metrics_list:
                 print(f"\n{modality.upper()} Synthesis:")
-                avg_metrics = {
-                    'l1': np.mean([m['l1'] for m in metrics_list]),
-                    'mse': np.mean([m['mse'] for m in metrics_list]),
-                    'psnr': np.mean([m['psnr'] for m in metrics_list]),
-                    'ssim': np.mean([m['ssim'] for m in metrics_list])
-                }
-                std_metrics = {
-                    'l1': np.std([m['l1'] for m in metrics_list]),
-                    'mse': np.std([m['mse'] for m in metrics_list]),
-                    'psnr': np.std([m['psnr'] for m in metrics_list]),
-                    'ssim': np.std([m['ssim'] for m in metrics_list])
-                }
-                print(f"  L1:   {avg_metrics['l1']:.6f} ± {std_metrics['l1']:.6f}")
-                print(f"  MSE:  {avg_metrics['mse']:.6f} ± {std_metrics['mse']:.6f}")
-                print(f"  PSNR: {avg_metrics['psnr']:.2f} ± {std_metrics['psnr']:.2f} dB")
-                print(f"  SSIM: {avg_metrics['ssim']:.4f} ± {std_metrics['ssim']:.4f}")
+                
+                # Performance metrics
+                if any('l1' in m for m in metrics_list):
+                    avg_metrics = {
+                        'l1': np.mean([m['l1'] for m in metrics_list if 'l1' in m]),
+                        'mse': np.mean([m['mse'] for m in metrics_list if 'mse' in m]),
+                        'psnr': np.mean([m['psnr'] for m in metrics_list if 'psnr' in m]),
+                        'ssim': np.mean([m['ssim'] for m in metrics_list if 'ssim' in m])
+                    }
+                    std_metrics = {
+                        'l1': np.std([m['l1'] for m in metrics_list if 'l1' in m]),
+                        'mse': np.std([m['mse'] for m in metrics_list if 'mse' in m]),
+                        'psnr': np.std([m['psnr'] for m in metrics_list if 'psnr' in m]),
+                        'ssim': np.std([m['ssim'] for m in metrics_list if 'ssim' in m])
+                    }
+                    print(f"  L1:   {avg_metrics['l1']:.6f} ± {std_metrics['l1']:.6f}")
+                    print(f"  MSE:  {avg_metrics['mse']:.6f} ± {std_metrics['mse']:.6f}")
+                    print(f"  PSNR: {avg_metrics['psnr']:.2f} ± {std_metrics['psnr']:.2f} dB")
+                    print(f"  SSIM: {avg_metrics['ssim']:.4f} ± {std_metrics['ssim']:.4f}")
+                
+                # Timing metrics
+                modality_sample_times = [m['sample_time'] for m in metrics_list if 'sample_time' in m]
+                if modality_sample_times:
+                    avg_time = np.mean(modality_sample_times)
+                    std_time = np.std(modality_sample_times)
+                    print(f"  Avg sample time: {avg_time:.2f} ± {std_time:.2f} seconds")
+                
                 print(f"  Cases: {len(metrics_list)}")
 
 

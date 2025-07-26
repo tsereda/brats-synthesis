@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: tr-multitask
+  name: 4-tr-multitask
   labels:
     app: tr-multitask
 spec:

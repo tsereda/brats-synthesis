@@ -135,7 +135,7 @@ COMMON="
 "
 
 TRAIN="
---lr_anneal_steps=74500  
+--lr_anneal_steps=150000  
 --data_dir=${DATA_DIR}
 --resume_checkpoint=
 --resume_step=0

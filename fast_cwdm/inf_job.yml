@@ -1,9 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: fast-cwdm-t2f
-  labels:
-    app: fast-cwdm-t2f
+  name: 3-inf-fastcwdm-t21n
 spec:
   backoffLimit: 0
   template:
@@ -52,7 +50,31 @@ spec:
           command: ["/bin/bash", "-c"]
           args:
             - |
-              
+              apt get install sudo
+              sudo apt-get update && sudo apt-get install -y p7zip-full wget git
+              pip install nibabel blobfile wandb batchgenerators simpleITK gdown monai
+
+              git clone https://github.com/tsereda/brats-synthesis.git ${REPO_PATH}
+              cd ${REPO_PATH}
+
+              7z x /data/ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData.tar.gz
+
+              7z x ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData.tar
+
+              #python fast_cwdm/scripts/drop_modality.py --drop_modality t1n --input_dir ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData --output_dir ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData-missingt1n
+
+              mkdir -p ./checkpoints
+
+              ls -la /data/checkpoints/
+              cp /data/checkpoints/brats_t1n_069850_sampled_100.pt  ./checkpoints/
+              ls -la ./checkpoints/
+
+              python fast_cwdm/scripts/complete_dataset.py \
+                --input_dir ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData \
+                --checkpoint_dir ./checkpoints \
+                --device cuda:0 \
+                --evaluation_mode \
+                --target_modality t1n
          
           volumeMounts:
             - name: workspace
@@ -78,7 +100,7 @@ spec:
             sizeLimit: 50Gi
         - name: data
           persistentVolumeClaim:
-            claimName: brats2025-1
+            claimName: brats2025-3
         - name: shm
           emptyDir:
             medium: Memory

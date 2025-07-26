@@ -4,6 +4,7 @@ Enhanced medical image synthesis script with SSIM evaluation
 Adds comprehensive metrics including SSIM for Fast-CWDM evaluation
 Now supports both real synthesis and evaluation modes
 FIXED: Proper checkpoint parsing for sampled_X.pt format
+ENHANCED: Brain masking for accurate clinical evaluation
 """
 
 import argparse
@@ -33,8 +34,24 @@ import torch.nn.functional as F
 # Constants
 MODALITIES = ['t1n', 't1c', 't2w', 't2f']
 
+def create_brain_mask_from_target(target, threshold=0.01):
+    """Create brain mask from target image"""
+    if target.dim() > 3:
+        # Remove batch/channel dimensions for mask creation
+        target_for_mask = target.squeeze()
+    else:
+        target_for_mask = target
+    
+    brain_mask = (target_for_mask > threshold).float()
+    
+    # Ensure mask has same dimensions as target
+    while brain_mask.dim() < target.dim():
+        brain_mask = brain_mask.unsqueeze(0)
+    
+    return brain_mask
+
 class ComprehensiveMetrics:
-    """Calculate comprehensive metrics for synthesis evaluation"""
+    """Calculate comprehensive metrics for synthesis evaluation with brain masking"""
     
     def __init__(self, device='cuda'):
         self.device = device
@@ -48,7 +65,7 @@ class ComprehensiveMetrics:
         self.psnr_metric = PSNRMetric(max_val=1.0)
         
     def calculate_metrics(self, predicted, target, case_name=""):
-        """Calculate L1, MSE, PSNR, and SSIM metrics"""
+        """Calculate L1, MSE, PSNR, and SSIM metrics with brain masking"""
         metrics = {}
         
         with th.no_grad():
@@ -67,30 +84,46 @@ class ComprehensiveMetrics:
             elif target.dim() == 4:
                 target = target.unsqueeze(1)
             
-            # Basic metrics
-            l1_loss = F.l1_loss(predicted, target).item()
-            mse_loss = F.mse_loss(predicted, target).item()
+            # 🧠 CREATE BRAIN MASK FROM TARGET (GROUND TRUTH)
+            brain_mask = create_brain_mask_from_target(target, threshold=0.01)
             
-            # PSNR
+            # 🧠 APPLY MASK TO BOTH PREDICTED AND TARGET
+            predicted_masked = predicted * brain_mask
+            target_masked = target * brain_mask
+            
+            # Calculate metrics on MASKED images only
+            l1_loss = F.l1_loss(predicted_masked, target_masked).item()
+            mse_loss = F.mse_loss(predicted_masked, target_masked).item()
+            
+            # PSNR on masked images
             try:
-                psnr_score = self.psnr_metric(y_pred=predicted, y=target).mean().item()
+                psnr_score = self.psnr_metric(y_pred=predicted_masked, y=target_masked).mean().item()
             except Exception as e:
                 print(f"  Warning: PSNR calculation failed for {case_name}: {e}")
                 psnr_score = 0.0
             
-            # SSIM
+            # SSIM on masked images - KEY IMPROVEMENT!
             try:
-                ssim_score = self.ssim_metric(y_pred=predicted, y=target).mean().item()
+                ssim_score = self.ssim_metric(y_pred=predicted_masked, y=target_masked).mean().item()
             except Exception as e:
                 print(f"  Warning: SSIM calculation failed for {case_name}: {e}")
                 ssim_score = 0.0
+            
+            # Calculate brain volume for debugging/reporting
+            brain_volume = brain_mask.sum().item()
+            total_volume = brain_mask.numel()
+            brain_ratio = brain_volume / total_volume
             
             metrics = {
                 'l1': l1_loss,
                 'mse': mse_loss,
                 'psnr': psnr_score,
-                'ssim': ssim_score
+                'ssim': ssim_score,
+                'brain_volume_ratio': brain_ratio
             }
+            
+            if case_name:
+                print(f"  {case_name}: SSIM={ssim_score:.4f} (brain region = {brain_ratio:.1%})")
             
         return metrics
 
@@ -454,14 +487,15 @@ def synthesize_modality(available_modalities, missing_modality, checkpoint_path,
     # Calculate comprehensive metrics if target is provided
     metrics = {}
     if metrics_calculator is not None and target_data is not None:
-        print(f"Calculating comprehensive metrics...")
+        print(f"🧠 Calculating brain-masked metrics...")
         metrics = metrics_calculator.calculate_metrics(
             spatial_sample, target_data, f"{missing_modality}_synthesis"
         )
         print(f"  L1: {metrics['l1']:.6f}")
         print(f"  MSE: {metrics['mse']:.6f}")
         print(f"  PSNR: {metrics['psnr']:.2f} dB")
-        print(f"  SSIM: {metrics['ssim']:.4f}")
+        print(f"  SSIM: {metrics['ssim']:.4f} (brain-masked)")
+        print(f"  Brain volume: {metrics['brain_volume_ratio']:.1%} of total")
     
     # Add timing info to metrics
     if metrics:
@@ -586,7 +620,7 @@ def process_case(case_dir, output_dir, checkpoint_dir, device, metrics_calculato
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Enhanced medical image synthesis with comprehensive metrics")
+    parser = argparse.ArgumentParser(description="Enhanced medical image synthesis with brain-masked comprehensive metrics")
     parser.add_argument("--input_dir", default="./datasets/BRATS2023/pseudo_validation")
     parser.add_argument("--output_dir", default="./datasets/BRATS2023/pseudo_validation_completed")
     parser.add_argument("--checkpoint_dir", default="./checkpoints")
@@ -621,7 +655,7 @@ def main():
     if args.diffusion_steps:
         print(f"🎯 Overriding diffusion steps: {args.diffusion_steps}")
     
-    print(f"🔧 Enhanced synthesis with comprehensive metrics")
+    print(f"🧠 Enhanced synthesis with BRAIN-MASKED comprehensive metrics")
     
     # Initialize metrics calculator
     metrics_calculator = ComprehensiveMetrics(device) if args.evaluate_metrics else None
@@ -707,7 +741,7 @@ def main():
     
     # Print comprehensive metrics summary
     if args.evaluate_metrics and any(all_metrics.values()):
-        print(f"\n=== COMPREHENSIVE METRICS SUMMARY ===")
+        print(f"\n=== 🧠 BRAIN-MASKED COMPREHENSIVE METRICS SUMMARY ===")
         for modality, metrics_list in all_metrics.items():
             if metrics_list:
                 print(f"\n{modality.upper()} Synthesis:")
@@ -729,7 +763,14 @@ def main():
                     print(f"  L1:   {avg_metrics['l1']:.6f} ± {std_metrics['l1']:.6f}")
                     print(f"  MSE:  {avg_metrics['mse']:.6f} ± {std_metrics['mse']:.6f}")
                     print(f"  PSNR: {avg_metrics['psnr']:.2f} ± {std_metrics['psnr']:.2f} dB")
-                    print(f"  SSIM: {avg_metrics['ssim']:.4f} ± {std_metrics['ssim']:.4f}")
+                    print(f"  🧠 SSIM: {avg_metrics['ssim']:.4f} ± {std_metrics['ssim']:.4f} (BRAIN-MASKED)")
+                
+                # Brain volume statistics
+                brain_ratios = [m['brain_volume_ratio'] for m in metrics_list if 'brain_volume_ratio' in m]
+                if brain_ratios:
+                    avg_brain_ratio = np.mean(brain_ratios)
+                    std_brain_ratio = np.std(brain_ratios)
+                    print(f"  Brain volume: {avg_brain_ratio:.1%} ± {std_brain_ratio:.1%} of total")
                 
                 # Timing metrics
                 modality_sample_times = [m['sample_time'] for m in metrics_list if 'sample_time' in m]

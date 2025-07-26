@@ -76,7 +76,7 @@ spec:
           mkdir -p ./checkpoints
 
           ls -la /data/checkpoints/
-          cp /data/checkpoints/brats_t1n_074500_sampled_100.p  ./checkpoints/
+          cp /data/checkpoints/brats_t1n_069850_sampled_100.pt  ./checkpoints/
           ls -la ./checkpoints/
 
           python fast_cwdm/scripts/complete_dataset.py \
@@ -111,7 +111,7 @@ spec:
         sizeLimit: 50Gi
     - name: data
       persistentVolumeClaim:
-        claimName: brats2025-3
+        claimName: brats2025-2
     - name: shm
       emptyDir:
         medium: Memory

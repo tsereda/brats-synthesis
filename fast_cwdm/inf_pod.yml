@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: inf-fast-cwdm-t1n
+  name: 3-inf-fast-cwdm-t1n
 spec:
   nodeSelector:
     #topology.kubernetes.io/region: us-west
@@ -111,7 +111,7 @@ spec:
         sizeLimit: 50Gi
     - name: data
       persistentVolumeClaim:
-        claimName: brats2025-2
+        claimName: brats2025-3
     - name: shm
       emptyDir:
         medium: Memory

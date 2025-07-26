@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-BraTS Multi-task UNETR: Synthesis + Segmentation - FIXED VERSION
+BraTS Multi-task UNETR: Synthesis + Segmentation - FIXED NORMALIZATION VERSION
 Key fixes:
 1. Convert BraTS labels to model format during data loading
 2. Fix validation output channel indexing
 3. Fix visualization array concatenation
+4. MATCH FAST-CWDM NORMALIZATION for consistent visualization
 """
 
 import os
@@ -70,6 +71,106 @@ class ConvertBraTSLabels(transforms.Transform):
         # Convert label 4 (ET) to label 3
         data[data == 4] = 3
         return data
+
+
+# FIX 4: Add Fast-CWDM style normalization to match visualization
+class FastCWDMNormalize(transforms.Transform):
+    """
+    Normalize exactly like Fast-CWDM to ensure consistent visualization
+    Applies quantile clipping + min-max normalization to [0,1]
+    """
+    
+    def __init__(self, keys=None, channel_wise=True):
+        self.keys = keys or []
+        self.channel_wise = channel_wise
+    
+    def __call__(self, data):
+        if isinstance(data, dict):
+            # Dictionary mode (used with keys)
+            result = data.copy()
+            for key in self.keys:
+                if key in data:
+                    result[key] = self._normalize_volume(data[key])
+            return result
+        else:
+            # Direct tensor mode
+            return self._normalize_volume(data)
+    
+    def _normalize_volume(self, img):
+        """Apply Fast-CWDM normalization to a volume"""
+        if isinstance(img, torch.Tensor):
+            img_np = img.cpu().numpy()
+            was_tensor = True
+            original_device = img.device
+        else:
+            img_np = np.array(img)
+            was_tensor = False
+        
+        if self.channel_wise and img_np.ndim > 3:
+            # Normalize each channel independently
+            normalized_channels = []
+            
+            if img_np.ndim == 4:  # [C, H, W, D]
+                for c in range(img_np.shape[0]):
+                    channel_data = img_np[c]
+                    normalized_channel = self._clip_and_normalize(channel_data)
+                    normalized_channels.append(normalized_channel)
+                result = np.stack(normalized_channels, axis=0)
+                
+            elif img_np.ndim == 5:  # [B, C, H, W, D]
+                normalized_batches = []
+                for b in range(img_np.shape[0]):
+                    batch_channels = []
+                    for c in range(img_np.shape[1]):
+                        channel_data = img_np[b, c]
+                        normalized_channel = self._clip_and_normalize(channel_data)
+                        batch_channels.append(normalized_channel)
+                    normalized_batches.append(np.stack(batch_channels, axis=0))
+                result = np.stack(normalized_batches, axis=0)
+            else:
+                result = self._clip_and_normalize(img_np)
+        else:
+            result = self._clip_and_normalize(img_np)
+        
+        if was_tensor:
+            return torch.from_numpy(result).to(original_device).float()
+        return result
+    
+    def _clip_and_normalize(self, img):
+        """
+        Exact Fast-CWDM normalization:
+        1. Clip to 0.1% - 99.9% quantiles
+        2. Min-max normalize to [0,1]
+        """
+        # Only normalize non-zero regions (brain mask)
+        brain_mask = img > 0
+        
+        if brain_mask.sum() == 0:
+            return img.astype(np.float32)
+        
+        # Get brain region only for quantile calculation
+        brain_values = img[brain_mask]
+        
+        # Quantile clipping on brain values only
+        q_low = np.quantile(brain_values, 0.001)
+        q_high = np.quantile(brain_values, 0.999)
+        
+        # Clip the entire image
+        img_clipped = np.clip(img, q_low, q_high)
+        
+        # Min-max normalization on brain regions
+        brain_min = img_clipped[brain_mask].min()
+        brain_max = img_clipped[brain_mask].max()
+        
+        if brain_max > brain_min:
+            img_normalized = (img_clipped - brain_min) / (brain_max - brain_min)
+        else:
+            img_normalized = img_clipped.copy()
+        
+        # Keep background as 0
+        img_normalized[~brain_mask] = 0
+        
+        return img_normalized.astype(np.float32)
 
 
 class MultiTaskSwinUNETR(nn.Module):
@@ -188,7 +289,7 @@ class MultiTaskLoss(nn.Module):
 
 
 class MultiTaskLogger:
-    """Enhanced logger for multi-task learning"""
+    """Enhanced logger for multi-task learning with FIXED normalization for visualization"""
     
     def __init__(self, target_modality):
         self.target_modality = target_modality
@@ -259,7 +360,7 @@ class MultiTaskLogger:
     
     def _log_multitask_sample(self, input_vol, target_synth, target_seg, 
                                pred_synth, pred_seg, case_name, stage_info):
-        """Log detailed multi-task sample with color overlays - FIXED VERSION"""
+        """Log detailed multi-task sample with FIXED normalization for consistent visualization"""
         try:
             # Handle input volume shape
             if input_vol.shape[0] == 3:
@@ -278,7 +379,7 @@ class MultiTaskLogger:
             # Get middle slice
             slice_idx = input_vol.shape[-1] // 2
             
-            # Extract slices - FIX: Handle different input shapes more robustly
+            # Extract slices - Handle different input shapes more robustly
             if input_vol.ndim == 4 and input_vol.shape[0] == 3:
                 input1_slice = input_vol[0, :, :, slice_idx]
                 input2_slice = input_vol[1, :, :, slice_idx]
@@ -297,18 +398,42 @@ class MultiTaskLogger:
             target_seg_slice = target_seg[:, :, slice_idx]
             pred_seg_slice = pred_seg[:, :, slice_idx]
 
-            # Normalize images
-            def norm_img(img):
-                img_min, img_max = img.min(), img.max()
-                if img_max > img_min:
-                    return (img - img_min) / (img_max - img_min)
-                return img
+            # FIX: Use Fast-CWDM style normalization for consistent visualization
+            def fast_cwdm_normalize_slice(img_slice):
+                """Apply Fast-CWDM normalization to a 2D slice"""
+                brain_mask = img_slice > 0
+                
+                if brain_mask.sum() == 0:
+                    return img_slice
+                
+                # Get brain values for quantile calculation
+                brain_values = img_slice[brain_mask]
+                
+                # Quantile clipping
+                q_low = np.quantile(brain_values, 0.001)
+                q_high = np.quantile(brain_values, 0.999)
+                img_clipped = np.clip(img_slice, q_low, q_high)
+                
+                # Min-max normalization
+                brain_min = img_clipped[brain_mask].min()
+                brain_max = img_clipped[brain_mask].max()
+                
+                if brain_max > brain_min:
+                    img_normalized = (img_clipped - brain_min) / (brain_max - brain_min)
+                else:
+                    img_normalized = img_clipped.copy()
+                
+                # Keep background as 0
+                img_normalized[~brain_mask] = 0
+                
+                return img_normalized
             
-            input1_slice = norm_img(input1_slice)
-            input2_slice = norm_img(input2_slice)
-            input3_slice = norm_img(input3_slice)
-            target_synth_slice = norm_img(target_synth_slice)
-            pred_synth_slice = norm_img(pred_synth_slice)
+            # Apply consistent normalization
+            input1_slice = fast_cwdm_normalize_slice(input1_slice)
+            input2_slice = fast_cwdm_normalize_slice(input2_slice)
+            input3_slice = fast_cwdm_normalize_slice(input3_slice)
+            target_synth_slice = fast_cwdm_normalize_slice(target_synth_slice)
+            pred_synth_slice = fast_cwdm_normalize_slice(pred_synth_slice)
 
             # Create color map for segmentation
             def create_colored_mask(mask):
@@ -335,7 +460,7 @@ class MultiTaskLogger:
                 img = (img * 255).astype(np.uint8)
                 return np.stack([img, img, img], axis=-1)
 
-            # FIX: Ensure all arrays are 3D with same first two dimensions
+            # Ensure all arrays are 3D with same first two dimensions
             all_slices = [
                 gray2rgb(input1_slice),
                 gray2rgb(input2_slice),
@@ -352,7 +477,7 @@ class MultiTaskLogger:
                 print(f"Shape mismatch in visualization arrays: {shapes}")
                 return
 
-            # Create layout - FIX: Now all arrays have same dimensions
+            # Create layout - Now all arrays have same dimensions
             layout = np.concatenate(all_slices, axis=1)
 
             # Create labels
@@ -560,9 +685,9 @@ def multitask_val_epoch(model, loader, epoch, max_epochs, target_modality, logge
                     cval=0.0,
                 )
 
-                # FIX 2: Correct output channel indexing
+                # Correct output channel indexing
                 pred_synthesis = predicted[:, 0:1, ...]  # First channel
-                pred_segmentation_raw = predicted[:, 1:5, ...]  # FIXED: Next 4 channels (not 3!)
+                pred_segmentation_raw = predicted[:, 1:5, ...]  # Next 4 channels
 
                 # Synthesis metrics
                 synth_l1 = F.l1_loss(pred_synthesis, target_synthesis)
@@ -588,10 +713,6 @@ def multitask_val_epoch(model, loader, epoch, max_epochs, target_modality, logge
                 pred_seg_for_dice = pred_seg_discrete.clone()
                 if pred_seg_for_dice.dim() == 5 and pred_seg_for_dice.shape[1] == 1:
                     pred_seg_for_dice = pred_seg_for_dice.squeeze(1)
-
-                # DEBUG: Print to see what's happening
-                print(f"  Target shape: {target_seg_fixed.shape}, unique: {torch.unique(target_seg_fixed)}")
-                print(f"  Pred shape: {pred_seg_for_dice.shape}, unique: {torch.unique(pred_seg_for_dice)}")
 
                 dice_metric_fixed = DiceMetric(
                     include_background=True,  # Try including background
@@ -650,15 +771,21 @@ def multitask_val_epoch(model, loader, epoch, max_epochs, target_modality, logge
 
 
 def get_multitask_transforms(roi, num_segmentation_classes=4):
-    """Get transforms for multi-task learning - FIXED VERSION"""
+    """Get transforms for multi-task learning - FIXED WITH FAST-CWDM NORMALIZATION"""
     
-    # FIX 4: Add BraTS label conversion to transforms
+    # Create the Fast-CWDM normalization transform
+    fast_cwdm_normalize = FastCWDMNormalize(
+        keys=["input_image", "target_synthesis"], 
+        channel_wise=True
+    )
+    
     train_transform = transforms.Compose([
         transforms.LoadImaged(keys=["input_image", "target_synthesis", "target_segmentation"]),
         transforms.EnsureChannelFirstd(keys=["input_image", "target_synthesis", "target_segmentation"]),
         # Convert BraTS labels {0,1,2,4} to model format {0,1,2,3}
         transforms.Lambdad(keys=["target_segmentation"], func=ConvertBraTSLabels()),
-        transforms.NormalizeIntensityd(keys=["input_image", "target_synthesis"], nonzero=True, channel_wise=True),
+        # FIXED: Use Fast-CWDM normalization instead of MONAI's NormalizeIntensityd
+        fast_cwdm_normalize,
         transforms.CropForegroundd(
             keys=["input_image", "target_synthesis", "target_segmentation"],
             source_key="input_image",
@@ -683,7 +810,8 @@ def get_multitask_transforms(roi, num_segmentation_classes=4):
         transforms.EnsureChannelFirstd(keys=["input_image", "target_synthesis", "target_segmentation"]),
         # Convert BraTS labels {0,1,2,4} to model format {0,1,2,3}
         transforms.Lambdad(keys=["target_segmentation"], func=ConvertBraTSLabels()),
-        transforms.NormalizeIntensityd(keys=["input_image", "target_synthesis"], nonzero=True, channel_wise=True),
+        # FIXED: Use Fast-CWDM normalization instead of MONAI's NormalizeIntensityd
+        fast_cwdm_normalize,
         transforms.CropForegroundd(
             keys=["input_image", "target_synthesis", "target_segmentation"],
             source_key="input_image",
@@ -707,8 +835,8 @@ def train_single_multitask_model(target_modality, save_dir, max_epochs=50, batch
     roi = (96, 96, 96)
     
     wandb.init(
-        project="BraTS2025-MultiTask",
-        name=f"multitask_{target_modality.lower()}_synth_seg",
+        project="BraTS2025-MultiTask-FixedNorm",
+        name=f"multitask_{target_modality.lower()}_synth_seg_fixednorm",
         config={
             "target_modality": target_modality,
             "max_epochs": max_epochs,
@@ -717,6 +845,7 @@ def train_single_multitask_model(target_modality, save_dir, max_epochs=50, batch
             "roi": roi,
             "task": "synthesis_and_segmentation",
             "num_segmentation_classes": num_segmentation_classes,
+            "normalization": "fast_cwdm_style",
         }
     )
     
@@ -788,7 +917,7 @@ def train_single_multitask_model(target_modality, save_dir, max_epochs=50, batch
         
         if combined_score > best_combined_score:
             best_combined_score = combined_score
-            filename = f"multitask_{target_modality.lower()}_best.pt"
+            filename = f"multitask_{target_modality.lower()}_best_fixednorm.pt"
             save_path = os.path.join(save_dir, filename)
             
             torch.save({
@@ -799,6 +928,7 @@ def train_single_multitask_model(target_modality, save_dir, max_epochs=50, batch
                 'best_combined_score': best_combined_score,
                 'val_metrics': val_metrics,
                 'target_modality': target_modality,
+                'normalization': 'fast_cwdm_style',
             }, save_path)
             
             print(f"✓ New best model saved: {save_path}")
@@ -811,7 +941,7 @@ def train_single_multitask_model(target_modality, save_dir, max_epochs=50, batch
 
 def parse_args():
     """Parse command line arguments"""
-    parser = argparse.ArgumentParser(description='Multi-task BraTS: Synthesis + Segmentation')
+    parser = argparse.ArgumentParser(description='Multi-task BraTS: Synthesis + Segmentation - FIXED NORMALIZATION')
     parser.add_argument('--save_dir', type=str, default='/data/multitask_models',
                         help='Directory to save the trained models')
     parser.add_argument('--max_epochs', type=int, default=50,
@@ -832,9 +962,10 @@ def main():
     if args.target_modality != 'all':
         modalities = [args.target_modality]
     
-    print(f"🚀 MULTI-TASK TRAINING: Synthesis + Segmentation - FIXED VERSION")
+    print(f"🚀 MULTI-TASK TRAINING: Synthesis + Segmentation - FIXED NORMALIZATION VERSION")
     print(f"📊 Training {len(modalities)} model(s)")
     print(f"💾 Models will be saved to: {args.save_dir}")
+    print(f"✅ Using Fast-CWDM style normalization for consistent visualization")
     
     results = {}
     for modality in modalities:
@@ -870,6 +1001,7 @@ def main():
         print(f"\n🏆 Average score: {avg_score:.6f}")
     
     print(f"📁 All models saved in: {args.save_dir}")
+    print(f"✅ Fixed normalization should now provide consistent W&B visualizations!")
 
 
 if __name__ == "__main__":

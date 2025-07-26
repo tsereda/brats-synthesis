@@ -1,9 +1,7 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: inf-fast-cwdm
-  labels:
-    app: fast-cwdm
+  name: inf-fast-cwdm-t1n
 spec:
   nodeSelector:
     #topology.kubernetes.io/region: us-west
@@ -77,14 +75,16 @@ spec:
 
           mkdir -p ./checkpoints
 
-          cp /data/brats_t1n_069850_sampled_100.pt  ./checkpoints/
+          ls -la /data/checkpoints/
+          cp /data/checkpoints/brats_t1n_074500_sampled_100.p  ./checkpoints/
           ls -la ./checkpoints/
 
           python fast_cwdm/scripts/complete_dataset.py \
             --input_dir ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData \
             --checkpoint_dir ./checkpoints \
             --device cuda:0 \
-            --evaluation_mode
+            --evaluation_mode \
+            --target_modality t1n
           tail -f /dev/null
      
       volumeMounts:
@@ -111,7 +111,7 @@ spec:
         sizeLimit: 50Gi
     - name: data
       persistentVolumeClaim:
-        claimName: brats2025-2
+        claimName: brats2025-3
     - name: shm
       emptyDir:
         medium: Memory

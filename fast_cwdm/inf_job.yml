@@ -1,0 +1,87 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: fast-cwdm-t2f
+  labels:
+    app: fast-cwdm-t2f
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: fast-cwdm
+    spec:
+      nodeSelector:
+        #topology.kubernetes.io/region: us-west
+        nautilus.io/linstor: "true"
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: PreferNoSchedule
+      containers:
+        - name: brats-processing
+          image: gitlab-registry.nrp-nautilus.io/prp/jupyter-stack/prp
+          env:
+            - name: REPO_PATH
+              value: /app/brats-synthesis
+            - name: PYTHONPATH
+              value: /app/brats-synthesis
+            - name: CUDA_VISIBLE_DEVICES
+              value: "0"
+            - name: nnUNet_raw
+              value: /app/nnunet/raw
+            - name: nnUNet_preprocessed
+              value: /app/nnunet/preprocessed
+            - name: nnUNet_results
+              value: /app/nnunet/results
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: PYTHONIOENCODING
+              value: "UTF-8"
+            - name: WANDB_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: wandb-credentials
+                  key: api-key
+            - name: WANDB_PROJECT
+              value: "fast-cwmd"
+            - name: WANDB_ENTITY
+              value: "timgsereda"
+            - name: WANDB_MODE
+              value: "online"
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              
+         
+          volumeMounts:
+            - name: workspace
+              mountPath: /app
+            - name: data
+              mountPath: /data
+            - name: shm
+              mountPath: /dev/shm
+        
+          resources:
+            requests:
+              memory: 25Gi
+              cpu: "15"
+              nvidia.com/a100: "1"
+            limits:
+              memory: 30Gi
+              cpu: "18"
+              nvidia.com/a100: "1"
+     
+      volumes:
+        - name: workspace
+          emptyDir:
+            sizeLimit: 50Gi
+        - name: data
+          persistentVolumeClaim:
+            claimName: brats2025-1
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Gi
+     
+      restartPolicy: Never

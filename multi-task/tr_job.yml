@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: 4-multitask-job-t2f
+  name: 4-tr-multitask-t2f
 spec:
   backoffLimit: 0
   template:
@@ -56,37 +56,33 @@ spec:
           command: ["/bin/bash", "-c"]
           args:
             - |
-              sudo mkdir /data/multitask_models/
-              sudo chmod 777 /data/multitask_models/
-              git clone https://github.com/tsereda/UNETR-BraTS-Synthesis.git ${REPO_PATH}
-              cd ${REPO_PATH}
-              
-              sudo apt-get update && sudo apt-get install -y p7zip-full wget git
-              
-              7z x /data/ASNR-MICCAI-BraTS2023-GLI-MET-TrainingData.tar.gz
-              7z x /data/ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData.tar.gz
+                sudo mkdir /data/multitask_models/
+                sudo chmod 777 /data/multitask_models/
+                git clone https://github.com/tsereda/brats-synthesis.git ${REPO_PATH}
+                cd ${REPO_PATH}
+                
+                sudo apt-get update && sudo apt-get install -y p7zip-full wget git
 
-              7z x ASNR-MICCAI-BraTS2023-GLI-MET-TrainingData.tar
-              7z x ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData.tar
-              
-              pip install "numpy<2.0" pyyaml tqdm nibabel wandb matplotlib monai[all]
-              pip install --upgrade tensorboard protobuf typing_extensions
-              
-              python -c "import wandb; print(f'W&B version: {wandb.__version__}')"
-              
-              python -c "import torch; print(f'GPUs available: {torch.cuda.device_count()}')"
-              
-              pip install "numpy<2.0" torch nibabel matplotlib monai[all]
+                pip install "numpy<2.0" pyyaml tqdm nibabel wandb matplotlib monai[all]
+                pip install --upgrade tensorboard protobuf typing_extensions
+                
+                python -c "import wandb; print(f'W&B version: {wandb.__version__}')"
+                
+                python -c "import torch; print(f'GPUs available: {torch.cuda.device_count()}')"
+                
+                pip install "numpy<2.0" torch nibabel matplotlib monai[all]
+                
+                ls -la /data/
+                7z x /data/ASNR-MICCAI-BraTS2023-GLI-MET-TrainingData.tar.gz
+                7z x /data/ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData.tar.gz
 
-              python multitask.py --batch_size 1 --max_epoch 2 --target_modality all
+                7z x ASNR-MICCAI-BraTS2023-GLI-MET-TrainingData.tar
+                7z x ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData.tar
+    
+                #choose from 'FLAIR', 'T1CE', 'T1', 'T2', 'all'
+                python multi-task/train.py --batch_size 1 --max_epoch 2 --target_modality FLAIR
 
-              # Uncomment to run inference after training
-              # python inferenceseg.py \
-              #   --model_path best_model_batchsize4_epoch100_128.pt \
-              #   --subset 5 \
-              #   --output_dir .
-
-              echo "Job completed successfully!"
+                echo "Job completed successfully!"
           
           volumeMounts:
             - name: workspace

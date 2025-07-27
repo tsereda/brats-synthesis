@@ -80,8 +80,9 @@ spec:
             python -c "import torch; print(f'GPUs available: {torch.cuda.device_count()}')"
             
             pip install "numpy<2.0" torch nibabel matplotlib monai[all]
-
-            python multi-task/train.py --batch_size 1 --max_epoch 2 --target_modality t2w
+ 
+            #choose from 'FLAIR', 'T1CE', 'T1', 'T2', 'all'
+            python multi-task/train.py --batch_size 1 --max_epoch 2 --target_modality T2
 
 
             tail -f /dev/null

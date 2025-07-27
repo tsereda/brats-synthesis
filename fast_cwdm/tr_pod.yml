@@ -125,7 +125,7 @@ spec:
 
             ls -la /data/checkpoints/
 
-            echo "Job completed successfully"
+            tail -f /dev/null
      
       volumeMounts:
         - name: workspace

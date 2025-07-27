@@ -19,122 +19,49 @@ import warnings
 import nibabel as nib
 
 import torch
-    with torch.no_grad():
-        for idx, batch_data in enumerate(loader):
-            try:
-                input_data = batch_data["input_image"].cuda()
-                target_synthesis = batch_data["target_synthesis"].cuda()
-                target_segmentation = batch_data["target_segmentation"].cuda()
+import torch.nn as nn
+import torch.nn.functional as F
+import wandb
 
-                # Use sliding window inference
-                predicted = sliding_window_inference(
-                    inputs=input_data,
-                    roi_size=roi,
-                    sw_batch_size=1,
-                    predictor=model,
-                    overlap=0.5,
-                    mode="gaussian",
-                    sigma_scale=0.125,
-                    padding_mode="constant",
-                    cval=0.0,
-                )
-                print(f"[VAL DEBUG] Batch {idx}: target_segmentation unique values BEFORE any processing: {torch.unique(target_segmentation)}")
+from monai.inferers import sliding_window_inference
+from monai import transforms
+from monai.transforms import AsDiscrete, Activations, DivisiblePadd
+from monai.networks.nets import SwinUNETR
+from monai.data import Dataset, DataLoader
+from monai.metrics import DiceMetric, PSNRMetric, SSIMMetric
+from monai.losses import DiceFocalLoss
+from monai.utils.enums import MetricReduction
+from monai.data import decollate_batch
 
-                # Correct output channel indexing
-                pred_synthesis = predicted[:, 0:1, ...]  # First channel
-                pred_segmentation_raw = predicted[:, 1:5, ...]  # Next 4 channels
+# Suppress warnings
+warnings.filterwarnings("ignore", category=RuntimeWarning)
 
-                # Synthesis metrics
-                synth_l1 = F.l1_loss(pred_synthesis, target_synthesis)
-                run_synth_l1.update(synth_l1.item(), n=input_data.shape[0])
 
-                # PSNR and SSIM
-                psnr_val = psnr_calculator(y_pred=pred_synthesis, y=target_synthesis).mean().item()
-                ssim_val = ssim_calculator(y_pred=pred_synthesis, y=target_synthesis).mean().item()
-                run_synth_psnr.update(psnr_val, n=input_data.shape[0])
-                run_synth_ssim.update(ssim_val, n=input_data.shape[0])
+class AverageMeter(object):
+    def __init__(self):
+        self.reset()
 
-                # Segmentation metrics (robust Dice calculation)
-                pred_seg_softmax = post_softmax(pred_segmentation_raw)
-                pred_seg_discrete = post_pred_seg(pred_seg_softmax)
-                # Fix: ensure pred_seg_discrete is [B, ...] with class indices, not [B, 4, ...]
-                if pred_seg_discrete.dim() == 5 and pred_seg_discrete.shape[1] == 4:
-                    pred_seg_discrete = torch.argmax(pred_seg_softmax, dim=1)
-                elif pred_seg_discrete.dim() == 5 and pred_seg_discrete.shape[1] == 1:
-                    pred_seg_discrete = pred_seg_discrete.squeeze(1)
+    def reset(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
 
-                # --- Robust Dice calculation with label/shape fix ---
-                target_seg_fixed = target_segmentation.clone()
-                if target_seg_fixed.dim() == 5 and target_seg_fixed.shape[1] == 1:
-                    target_seg_fixed = target_seg_fixed.squeeze(1)
-                # BraTS label conversion: {0,1,2,4} → {0,1,2,3}
-                target_seg_fixed[target_seg_fixed == 4] = 3
+    def update(self, val, n=1):
+        self.val = val
+        self.sum += val * n
+        self.count += n
+        if isinstance(self.count, np.ndarray):
+            if (self.count > 0).all():
+                self.avg = self.sum / self.count
+            else:
+                self.avg = self.sum
+        else:
+            if self.count > 0:
+                self.avg = self.sum / self.count
+            else:
+                self.avg = self.sum
 
-                # Debug: Print unique values and shapes for predictions and targets
-                print(f"[DEBUG] pred_seg_discrete shape: {pred_seg_discrete.shape}, unique: {torch.unique(pred_seg_discrete)}")
-                print(f"[DEBUG] target_seg_fixed shape: {target_seg_fixed.shape}, unique: {torch.unique(target_seg_fixed)}")
-
-                # Debug: Visualize a central slice of prediction and target for first 3 batches
-                if idx < 3:
-                    import matplotlib.pyplot as plt
-                    # Take the first sample in batch
-                    pred_np = pred_seg_discrete[0].detach().cpu().numpy()
-                    target_np = target_seg_fixed[0].detach().cpu().numpy()
-                    # Get central slice along last axis
-                    z = pred_np.shape[-1] // 2
-                    fig, axs = plt.subplots(1, 2, figsize=(8, 4))
-                    axs[0].imshow(pred_np[:, :, z], vmin=0, vmax=3, cmap='tab10')
-                    axs[0].set_title('Predicted seg (val)')
-                    axs[1].imshow(target_np[:, :, z], vmin=0, vmax=3, cmap='tab10')
-                    axs[1].set_title('GT seg (val)')
-                    for ax in axs:
-                        ax.axis('off')
-                    plt.tight_layout()
-                    plt.savefig(f"val_debug_seg_epoch{epoch+1}_batch{idx+1}.png")
-                    plt.close(fig)
-
-                pred_seg_for_dice = pred_seg_discrete.clone()
-                if pred_seg_for_dice.dim() == 5 and pred_seg_for_dice.shape[1] == 1:
-                    pred_seg_for_dice = pred_seg_for_dice.squeeze(1)
-
-                dice_metric_fixed = DiceMetric(
-                    include_background=True,  # Try including background
-                    reduction=MetricReduction.MEAN,
-                    get_not_nans=True
-                )
-                dice_metric_fixed.reset()
-                dice_metric_fixed(y_pred=pred_seg_for_dice, y=target_seg_fixed)
-                dice_scores, not_nans = dice_metric_fixed.aggregate()
-
-                if isinstance(dice_scores, torch.Tensor) and len(dice_scores) > 1:
-                    # If include_background=True, skip background class (index 0)
-                    dice_avg = dice_scores[1:].mean().item()
-                else:
-                    dice_avg = dice_scores.mean().item() if isinstance(dice_scores, torch.Tensor) else float(dice_scores)
-
-                all_dice_scores.append(dice_avg)
-
-                # Collect samples for logging
-                if len(sample_inputs) < 5:
-                    sample_inputs.append(input_data[0].cpu().numpy())
-                    sample_targets_synth.append(target_synthesis[0].cpu().numpy())
-                    sample_targets_seg.append(target_segmentation[0].cpu().numpy())
-                    sample_preds_synth.append(pred_synthesis[0].cpu().numpy())
-                    sample_preds_seg.append(pred_seg_discrete[0].cpu().numpy())
-                    sample_names.append(batch_data.get("case_id", [f"val_case_{idx}"])[0])
-
-                if (idx + 1) % 10 == 0:
-                    print(f"Val [{idx+1}/{len(loader)}] "
-                          f"Synth L1: {run_synth_l1.avg:.6f} "
-                          f"PSNR: {run_synth_psnr.avg:.2f} "
-                          f"SSIM: {run_synth_ssim.avg:.4f} "
-                          f"Dice: {dice_avg:.4f}")
-
-            except Exception as e:
-                print(f"Error in validation step {idx}: {e}")
-                import traceback
-                traceback.print_exc()
-                continue
 
 # FIX 1: Add BraTS to model label conversion
 class ConvertBraTSLabels(transforms.Transform):

@@ -199,14 +199,22 @@ def synthesize_modality_shared(model, diffusion, available_modalities, missing_m
                     t = t.contiguous()
             print(f"   [DEBUG] Model input shape: {x.shape}")
             print(f"   [DEBUG] Timesteps shape: {getattr(t, 'shape', None)}, dtype: {getattr(t, 'dtype', None)}, device: {getattr(t, 'device', None)}, contiguous: {t.is_contiguous()}")
-            # Print actual timestep values and check for out-of-bounds
+            # Print actual timestep values and check for out-of-bounds robustly
             if hasattr(diffusion, 'num_timesteps'):
                 num_timesteps = getattr(diffusion, 'num_timesteps')
-                t_cpu = t.detach().cpu().numpy() if hasattr(t, 'detach') else t
-                print(f"   [DEBUG] Timesteps values: {t_cpu}")
-                if (t_cpu < 0).any() or (t_cpu >= num_timesteps).any():
-                    print(f"   [ERROR] Out-of-bounds timestep detected! t={t_cpu}, num_timesteps={num_timesteps}")
-                    raise ValueError(f"Timestep value(s) out of bounds: t={t_cpu}, num_timesteps={num_timesteps}")
+                # Convert t to CPU numpy array for inspection
+                if isinstance(t, th.Tensor):
+                    t_cpu = t.detach().cpu().flatten().tolist()
+                elif isinstance(t, (list, tuple, np.ndarray)):
+                    t_cpu = list(t)
+                else:
+                    t_cpu = [int(t)]
+                print(f"   [DEBUG] Timesteps values: {t_cpu} (allowed: 0 to {num_timesteps-1})")
+                # Check for out-of-bounds
+                for idx, val in enumerate(t_cpu):
+                    if val < 0 or val >= num_timesteps:
+                        print(f"   [ERROR] Out-of-bounds timestep detected at index {idx}: t={val}, num_timesteps={num_timesteps}")
+                        raise ValueError(f"Timestep value out of bounds at index {idx}: t={val}, num_timesteps={num_timesteps}")
             out = model(x, t, **kwargs)
             print(f"   [DEBUG] Model output shape: {out.shape}")
             return out

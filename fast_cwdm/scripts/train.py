@@ -171,7 +171,7 @@ def create_argparser():
         learn_sigma=False,
         num_groups=32,
         channel_mult="1,2,2,4,4",
-        in_channels=8,
+        in_channels=24,
         out_channels=8,
         bottleneck_attention=False,
         num_workers=0,

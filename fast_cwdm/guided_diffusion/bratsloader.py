@@ -13,15 +13,16 @@ class BRATSVolumes(torch.utils.data.Dataset):
         self.directory = os.path.expanduser(directory)
         self.gentype = gen_type
         self.seqtypes = ['t1n', 't1c', 't2w', 't2f', 'seg']
-        
-        # DWT-compatible crop bounds: (160, 208, 152) - all even dimensions
+
+        # VALIDATED DWT-compatible crop bounds: (160, 208, 152) - all even dimensions
+        # These bounds are used everywhere for training, validation, and conversion
         self.crop_bounds = {
             'x_min': 39, 'x_max': 199,  # width: 160
             'y_min': 17, 'y_max': 225,  # height: 208
             'z_min': 0,  'z_max': 152   # depth: 152
         }
-        
-        print(f"🔧 Using crop: 160x208x152 (DWT-compatible)")
+        self.cropped_shape = (160, 208, 152)
+        print(f"🔧 Using VALIDATED crop: 160x208x152 (DWT-compatible)")
 
         self.database = []
         for root, dirs, files in os.walk(self.directory):
@@ -34,56 +35,42 @@ class BRATSVolumes(torch.utils.data.Dataset):
                 self.database.append(datapoint)
 
     def apply_crop(self, img_data):
-        """Apply fixed crop bounds"""
+        """Apply fixed crop bounds and pad if needed to DWT-compatible shape"""
         x_min, x_max = self.crop_bounds['x_min'], self.crop_bounds['x_max']
         y_min, y_max = self.crop_bounds['y_min'], self.crop_bounds['y_max']
         z_min, z_max = self.crop_bounds['z_min'], self.crop_bounds['z_max']
-        
-        return img_data[x_min:x_max, y_min:y_max, z_min:z_max]
+        cropped = img_data[x_min:x_max, y_min:y_max, z_min:z_max]
+        # Pad if needed (shouldn't be needed, but robust)
+        pad_shape = self.cropped_shape
+        pad_width = [(0, max(0, pad_shape[i] - cropped.shape[i])) for i in range(3)]
+        if any(p[1] > 0 for p in pad_width):
+            cropped = np.pad(cropped, pad_width, mode='constant')
+        return cropped
 
     def __getitem__(self, x):
         filedict = self.database[x]
         missing = 'none'
 
-        # Load and process t1n
-        if 't1n' in filedict:
-            t1n_np = nibabel.load(filedict['t1n']).get_fdata()
-            t1n_cropped = self.apply_crop(t1n_np)
-            t1n_norm = clip_and_normalize(t1n_cropped)
-            t1n = torch.tensor(t1n_norm).float().unsqueeze(0)
-        else:
-            missing = 't1n'
-            t1n = torch.zeros(1)
+        # Helper to process a modality robustly
+        def process_modality(key):
+            if key in filedict:
+                np_img = nibabel.load(filedict[key]).get_fdata()
+                cropped = self.apply_crop(np_img)
+                normed = clip_and_normalize(cropped)
+                tensor = torch.tensor(normed).float().unsqueeze(0)
+            else:
+                tensor = torch.zeros(1, *self.cropped_shape)
+            return tensor
 
-        # Load and process t1c
-        if 't1c' in filedict:
-            t1c_np = nibabel.load(filedict['t1c']).get_fdata()
-            t1c_cropped = self.apply_crop(t1c_np)
-            t1c_norm = clip_and_normalize(t1c_cropped)
-            t1c = torch.tensor(t1c_norm).float().unsqueeze(0)
-        else:
-            missing = 't1c'
-            t1c = torch.zeros(1)
+        t1n = process_modality('t1n')
+        t1c = process_modality('t1c')
+        t2w = process_modality('t2w')
+        t2f = process_modality('t2f')
 
-        # Load and process t2w
-        if 't2w' in filedict:
-            t2w_np = nibabel.load(filedict['t2w']).get_fdata()
-            t2w_cropped = self.apply_crop(t2w_np)
-            t2w_norm = clip_and_normalize(t2w_cropped)
-            t2w = torch.tensor(t2w_norm).float().unsqueeze(0)
-        else:
-            missing = 't2w'
-            t2w = torch.zeros(1)
-
-        # Load and process t2f
-        if 't2f' in filedict:
-            t2f_np = nibabel.load(filedict['t2f']).get_fdata()
-            t2f_cropped = self.apply_crop(t2f_np)
-            t2f_norm = clip_and_normalize(t2f_cropped)
-            t2f = torch.tensor(t2f_norm).float().unsqueeze(0)
-        else:
-            missing = 't2f'
-            t2f = torch.zeros(1)
+        # Set missing flag if any are missing
+        for key, t in zip(['t1n', 't1c', 't2w', 't2f'], [t1n, t1c, t2w, t2f]):
+            if t.sum() == 0:
+                missing = key
 
         # Handle subject ID
         if self.mode in ['eval', 'auto']:

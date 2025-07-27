@@ -4,6 +4,8 @@ Enhanced BRATS dataset analysis to find optimal crop boundaries with validation
 Identifies consistent brain regions across all cases for efficient cropping
 Includes comprehensive validation to ensure no brain tissue loss
 NOW WITH WAVELET-FRIENDLY DIMENSION CONSTRAINTS for Fast-CWDM
+
+# NOTE: The validated crop bounds (160x208x152, x:39-199, y:17-225, z:0-152) are used everywhere in the codebase for loader, training, and conversion.
 """
 
 import os

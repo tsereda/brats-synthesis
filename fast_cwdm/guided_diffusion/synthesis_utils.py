@@ -199,6 +199,14 @@ def synthesize_modality_shared(model, diffusion, available_modalities, missing_m
                     t = t.contiguous()
             print(f"   [DEBUG] Model input shape: {x.shape}")
             print(f"   [DEBUG] Timesteps shape: {getattr(t, 'shape', None)}, dtype: {getattr(t, 'dtype', None)}, device: {getattr(t, 'device', None)}, contiguous: {t.is_contiguous()}")
+            # Print actual timestep values and check for out-of-bounds
+            if hasattr(diffusion, 'num_timesteps'):
+                num_timesteps = getattr(diffusion, 'num_timesteps')
+                t_cpu = t.detach().cpu().numpy() if hasattr(t, 'detach') else t
+                print(f"   [DEBUG] Timesteps values: {t_cpu}")
+                if (t_cpu < 0).any() or (t_cpu >= num_timesteps).any():
+                    print(f"   [ERROR] Out-of-bounds timestep detected! t={t_cpu}, num_timesteps={num_timesteps}")
+                    raise ValueError(f"Timestep value(s) out of bounds: t={t_cpu}, num_timesteps={num_timesteps}")
             out = model(x, t, **kwargs)
             print(f"   [DEBUG] Model output shape: {out.shape}")
             return out

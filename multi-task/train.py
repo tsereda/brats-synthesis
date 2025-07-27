@@ -652,10 +652,17 @@ def multitask_val_epoch(model, loader, epoch, max_epochs, target_modality, logge
     
     # Dice metric for segmentation
     dice_metric = DiceMetric(
-        include_background=False,  # Exclude background for dice calculation
-        reduction=MetricReduction.MEAN,
-        get_not_nans=True
-    )
+    include_background=False,  # Exclude background
+    reduction=MetricReduction.MEAN_BATCH,  # Per-class average
+    get_not_nans=True
+)
+
+    # Then calculate per-class Dice:
+    dice_metric(y_pred=pred_seg_softmax, y=target_seg_fixed)
+    dice_scores = dice_metric.aggregate()
+
+    # Tumor classes are indices 1,2,3 (WT, TC, ET)
+    tumor_dice = dice_scores[:, 1:].mean()  
     
     # Collect samples for logging
     sample_inputs, sample_targets_synth, sample_targets_seg = [], [], []
@@ -708,8 +715,8 @@ def multitask_val_epoch(model, loader, epoch, max_epochs, target_modality, logge
                 run_synth_ssim.update(ssim_val, n=input_data.shape[0])
 
                 # Segmentation metrics (robust Dice calculation)
-                pred_seg_softmax = post_softmax(pred_segmentation_raw)
-                pred_seg_discrete = post_pred_seg(pred_seg_softmax)
+                pred_seg_softmax = torch.softmax(pred_segmentation_raw, dim=1)
+                pred_seg_discrete = torch.argmax(pred_seg_softmax, dim=1, keepdim=True)
                 # Fix: ensure pred_seg_discrete is [B, ...] with class indices, not [B, 4, ...]
                 if pred_seg_discrete.dim() == 5 and pred_seg_discrete.shape[1] == 4:
                     pred_seg_discrete = torch.argmax(pred_seg_softmax, dim=1)
@@ -721,8 +728,6 @@ def multitask_val_epoch(model, loader, epoch, max_epochs, target_modality, logge
                 if target_seg_fixed.dim() == 5 and target_seg_fixed.shape[1] == 1:
                     target_seg_fixed = target_seg_fixed.squeeze(1)
                 # BraTS label conversion: {0,1,2,4} → {0,1,2,3}
-
-                target_seg_fixed[target_seg_fixed == 4] = 3
 
 
                 # Debug: Print unique values and shapes for predictions and targets

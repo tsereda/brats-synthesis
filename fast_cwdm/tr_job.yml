@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: 1-fast-cwdm-t2f
+  name: 2-fast-cwdm-t2f
 spec:
   backoffLimit: 0
   template:
@@ -135,7 +135,7 @@ spec:
             sizeLimit: 50Gi
         - name: data
           persistentVolumeClaim:
-            claimName: brats2025-1
+            claimName: brats2025-2
         - name: shm
           emptyDir:
             medium: Memory

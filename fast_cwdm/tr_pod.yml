@@ -97,7 +97,8 @@ spec:
             echo "Training patients: $(ls datasets/BRATS2023/training/ | wc -l)"
             echo "Validation patients: $(ls datasets/BRATS2023/validation/ | wc -l)"
 
-            pip install pyyaml torch tqdm numpy nibabel wandb matplotlib blobfile tensorboard PyWavelets mondai
+            pip install pyyaml torch tqdm numpy nibabel wandb matplotlib blobfile tensorboard PyWavelets 
+            pip install mondai
             
             python -c "import wandb; print(f'W&B version: {wandb.__version__}')"
             python -c "import torch; print(f'GPUs available: {torch.cuda.device_count()}')"

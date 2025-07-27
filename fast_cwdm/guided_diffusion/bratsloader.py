@@ -24,7 +24,7 @@ class BRATSVolumes(torch.utils.data.Dataset):
         self.seqtypes_set = set(self.seqtypes)
         
         # Use VALIDATED WAVELET-FRIENDLY crop bounds from dataset analysis
-        self.crop_bounds = self.load_crop_config(crop_config_path)
+        self.crop_bounds = {'x_min': 39, 'x_max': 199, 'y_min': 17, 'y_max': 225, 'z_min': 0, 'z_max': 154}
         self.use_optimal_crop = self.crop_bounds is not None
         
         if self.use_optimal_crop:

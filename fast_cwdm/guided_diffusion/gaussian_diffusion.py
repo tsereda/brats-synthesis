@@ -1094,7 +1094,7 @@ class GaussianDiffusion:
         :param labels: must be specified for mode='segmentation'
         :param mode:  can be default (image generation), segmentation
         :return: a dict with the key "loss" containing a tensor of shape [N].
-                Some mean or variance settings may also have other keys.
+                 Some mean or variance settings may also have other keys.
         """
         if model_kwargs is None:
             model_kwargs = {}
@@ -1127,126 +1127,21 @@ class GaussianDiffusion:
             else:
                 print("This contrast can't be synthesized.")
 
-            # DEBUG: Print input shapes before DWT
-            print(f"[DEBUG] Input shapes - target: {target.shape}")
-            print(f"[DEBUG] Input shapes - cond_1: {cond_1.shape}")
-            print(f"[DEBUG] Input shapes - cond_2: {cond_2.shape}")
-            print(f"[DEBUG] Input shapes - cond_3: {cond_3.shape}")
-            
-            # Ensure all condition images have the same size as target
-            target_shape = target.shape
-            
-            # Resize conditions to match target if needed
-            if cond_1.shape != target_shape:
-                print(f"[WARNING] Resizing cond_1 from {cond_1.shape} to {target_shape}")
-                cond_1 = th.nn.functional.interpolate(cond_1, size=target_shape[2:], mode='trilinear', align_corners=False)
-            
-            if cond_2.shape != target_shape:
-                print(f"[WARNING] Resizing cond_2 from {cond_2.shape} to {target_shape}")
-                cond_2 = th.nn.functional.interpolate(cond_2, size=target_shape[2:], mode='trilinear', align_corners=False)
-                
-            if cond_3.shape != target_shape:
-                print(f"[WARNING] Resizing cond_3 from {cond_3.shape} to {target_shape}")
-                cond_3 = th.nn.functional.interpolate(cond_3, size=target_shape[2:], mode='trilinear', align_corners=False)
+            # Concatenate conditions along the channel dimension
+            LLL, LLH, LHL, LHH, HLL, HLH, HHL, HHH = dwt(cond_1)
+            cond_dwt = th.cat([LLL / 3., LLH, LHL, LHH, HLL, HLH, HHL, HHH], dim=1)
+            LLL, LLH, LHL, LHH, HLL, HLH, HHL, HHH = dwt(cond_2)
+            cond_dwt = th.cat([cond_dwt, LLL / 3., LLH, LHL, LHH, HLL, HLH, HHL, HHH], dim=1)
+            LLL, LLH, LHL, LHH, HLL, HLH, HHL, HHH = dwt(cond_3)
+            cond_dwt = th.cat([cond_dwt, LLL / 3., LLH, LHL, LHH, HLL, HLH, HHL, HHH], dim=1)
 
-            # Perform DWT on condition 1
-            LLL_1, LLH_1, LHL_1, LHH_1, HLL_1, HLH_1, HHL_1, HHH_1 = dwt(cond_1)
-            print(f"[DEBUG] DWT cond_1 shapes - LLL: {LLL_1.shape}, LLH: {LLH_1.shape}")
-            
-            # Perform DWT on condition 2
-            LLL_2, LLH_2, LHL_2, LHH_2, HLL_2, HLH_2, HHL_2, HHH_2 = dwt(cond_2)
-            print(f"[DEBUG] DWT cond_2 shapes - LLL: {LLL_2.shape}, LLH: {LLH_2.shape}")
-            
-            # Perform DWT on condition 3
-            LLL_3, LLH_3, LHL_3, LHH_3, HLL_3, HLH_3, HHL_3, HHH_3 = dwt(cond_3)
-            print(f"[DEBUG] DWT cond_3 shapes - LLL: {LLL_3.shape}, LLH: {LLH_3.shape}")
-
-            # Find minimum spatial dimensions across all DWT outputs
-            # This ensures all tensors can be concatenated
-            min_h = min(LLL_1.shape[2], LLL_2.shape[2], LLL_3.shape[2])
-            min_w = min(LLL_1.shape[3], LLL_2.shape[3], LLL_3.shape[3])
-            min_d = min(LLL_1.shape[4], LLL_2.shape[4], LLL_3.shape[4])
-            
-            print(f"[DEBUG] Minimum spatial dims: {min_h}x{min_w}x{min_d}")
-
-            # Crop all DWT outputs to the minimum size
-            def crop_to_size(tensor, h, w, d):
-                return tensor[:, :, :h, :w, :d]
-
-            # Crop condition 1 DWT outputs
-            LLL_1 = crop_to_size(LLL_1, min_h, min_w, min_d)
-            LLH_1 = crop_to_size(LLH_1, min_h, min_w, min_d)
-            LHL_1 = crop_to_size(LHL_1, min_h, min_w, min_d)
-            LHH_1 = crop_to_size(LHH_1, min_h, min_w, min_d)
-            HLL_1 = crop_to_size(HLL_1, min_h, min_w, min_d)
-            HLH_1 = crop_to_size(HLH_1, min_h, min_w, min_d)
-            HHL_1 = crop_to_size(HHL_1, min_h, min_w, min_d)
-            HHH_1 = crop_to_size(HHH_1, min_h, min_w, min_d)
-
-            # Crop condition 2 DWT outputs
-            LLL_2 = crop_to_size(LLL_2, min_h, min_w, min_d)
-            LLH_2 = crop_to_size(LLH_2, min_h, min_w, min_d)
-            LHL_2 = crop_to_size(LHL_2, min_h, min_w, min_d)
-            LHH_2 = crop_to_size(LHH_2, min_h, min_w, min_d)
-            HLL_2 = crop_to_size(HLL_2, min_h, min_w, min_d)
-            HLH_2 = crop_to_size(HLH_2, min_h, min_w, min_d)
-            HHL_2 = crop_to_size(HHL_2, min_h, min_w, min_d)
-            HHH_2 = crop_to_size(HHH_2, min_h, min_w, min_d)
-
-            # Crop condition 3 DWT outputs
-            LLL_3 = crop_to_size(LLL_3, min_h, min_w, min_d)
-            LLH_3 = crop_to_size(LLH_3, min_h, min_w, min_d)
-            LHL_3 = crop_to_size(LHL_3, min_h, min_w, min_d)
-            LHH_3 = crop_to_size(LHH_3, min_h, min_w, min_d)
-            HLL_3 = crop_to_size(HLL_3, min_h, min_w, min_d)
-            HLH_3 = crop_to_size(HLH_3, min_h, min_w, min_d)
-            HHL_3 = crop_to_size(HHL_3, min_h, min_w, min_d)
-            HHH_3 = crop_to_size(HHH_3, min_h, min_w, min_d)
-
-            # Now concatenate all condition DWT outputs
-            cond_dwt = th.cat([
-                LLL_1 / 3., LLH_1, LHL_1, LHH_1, HLL_1, HLH_1, HHL_1, HHH_1,
-                LLL_2 / 3., LLH_2, LHL_2, LHH_2, HLL_2, HLH_2, HHL_2, HHH_2,
-                LLL_3 / 3., LLH_3, LHL_3, LHH_3, HLL_3, HLH_3, HHL_3, HHH_3
-            ], dim=1)
-            
-            print(f"[DEBUG] Final cond_dwt shape: {cond_dwt.shape}")
-
-        # Wavelet transform the target image
+        # Wavelet transform the input image
         LLL, LLH, LHL, LHH, HLL, HLH, HHL, HHH = dwt(target)
-        
-        # Crop target DWT outputs to match condition DWT size if needed
-        if mode == 'i2i':
-            target_min_h = min(LLL.shape[2], min_h)
-            target_min_w = min(LLL.shape[3], min_w)
-            target_min_d = min(LLL.shape[4], min_d)
-            
-            LLL = crop_to_size(LLL, target_min_h, target_min_w, target_min_d)
-            LLH = crop_to_size(LLH, target_min_h, target_min_w, target_min_d)
-            LHL = crop_to_size(LHL, target_min_h, target_min_w, target_min_d)
-            LHH = crop_to_size(LHH, target_min_h, target_min_w, target_min_d)
-            HLL = crop_to_size(HLL, target_min_h, target_min_w, target_min_d)
-            HLH = crop_to_size(HLH, target_min_h, target_min_w, target_min_d)
-            HHL = crop_to_size(HHL, target_min_h, target_min_w, target_min_d)
-            HHH = crop_to_size(HHH, target_min_h, target_min_w, target_min_d)
-        
         x_start_dwt = th.cat([LLL / 3., LLH, LHL, LHH, HLL, HLH, HHL, HHH], dim=1)
-        print(f"[DEBUG] Target x_start_dwt shape: {x_start_dwt.shape}")
+
 
         noise = th.randn_like(target)  # Sample noise - original image resolution.
         LLL, LLH, LHL, LHH, HLL, HLH, HHL, HHH = dwt(noise)
-        
-        # Crop noise DWT outputs to match other sizes
-        if mode == 'i2i':
-            LLL = crop_to_size(LLL, target_min_h, target_min_w, target_min_d)
-            LLH = crop_to_size(LLH, target_min_h, target_min_w, target_min_d)
-            LHL = crop_to_size(LHL, target_min_h, target_min_w, target_min_d)
-            LHH = crop_to_size(LHH, target_min_h, target_min_w, target_min_d)
-            HLL = crop_to_size(HLL, target_min_h, target_min_w, target_min_d)
-            HLH = crop_to_size(HLH, target_min_h, target_min_w, target_min_d)
-            HHL = crop_to_size(HHL, target_min_h, target_min_w, target_min_d)
-            HHH = crop_to_size(HHH, target_min_h, target_min_w, target_min_d)
-        
         noise_dwt = th.cat([LLL, LLH, LHL, LHH, HLL, HLH, HHL, HHH], dim=1)  # Wavelet transformed noise
         x_t = self.q_sample(x_start_dwt, t, noise=noise_dwt)  # Sample x_t
 
@@ -1258,13 +1153,13 @@ class GaussianDiffusion:
         # Inverse wavelet transform the model output
         B, _, H, W, D = model_output.size()
         model_output_idwt = idwt(model_output[:, 0, :, :, :].view(B, 1, H, W, D) * 3.,
-                                model_output[:, 1, :, :, :].view(B, 1, H, W, D),
-                                model_output[:, 2, :, :, :].view(B, 1, H, W, D),
-                                model_output[:, 3, :, :, :].view(B, 1, H, W, D),
-                                model_output[:, 4, :, :, :].view(B, 1, H, W, D),
-                                model_output[:, 5, :, :, :].view(B, 1, H, W, D),
-                                model_output[:, 6, :, :, :].view(B, 1, H, W, D),
-                                model_output[:, 7, :, :, :].view(B, 1, H, W, D))
+                                 model_output[:, 1, :, :, :].view(B, 1, H, W, D),
+                                 model_output[:, 2, :, :, :].view(B, 1, H, W, D),
+                                 model_output[:, 3, :, :, :].view(B, 1, H, W, D),
+                                 model_output[:, 4, :, :, :].view(B, 1, H, W, D),
+                                 model_output[:, 5, :, :, :].view(B, 1, H, W, D),
+                                 model_output[:, 6, :, :, :].view(B, 1, H, W, D),
+                                 model_output[:, 7, :, :, :].view(B, 1, H, W, D))
 
         terms = {"mse_wav": th.mean(mean_flat((x_start_dwt - model_output) ** 2), dim=0)}
 

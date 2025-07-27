@@ -5,7 +5,7 @@
     "y_min": 17,
     "y_max": 224,
     "z_min": 0,
-    "z_max": 152
+    "z_max": 160
   },
   "wavelet_friendly_crop_bounds": {
     "x_min": 39,
@@ -26,7 +26,7 @@
     "cropped_shape": [
       156,
       207,
-      152
+      160
     ],
     "original_volume": 8928000,
     "cropped_volume": 4908384,
@@ -74,7 +74,7 @@
             "y_min": 17,
             "y_max": 224,
             "z_min": 0,
-            "z_max": 152
+            "z_max": 160
           },
           "seg_preserved": true,
           "seg_bounds": {
@@ -103,7 +103,7 @@
             "y_min": 17,
             "y_max": 224,
             "z_min": 0,
-            "z_max": 152
+            "z_max": 160
           },
           "seg_preserved": true,
           "seg_bounds": {
@@ -132,7 +132,7 @@
             "y_min": 17,
             "y_max": 224,
             "z_min": 0,
-            "z_max": 152
+            "z_max": 160
           },
           "seg_preserved": true,
           "seg_bounds": {
@@ -161,7 +161,7 @@
             "y_min": 17,
             "y_max": 224,
             "z_min": 0,
-            "z_max": 152
+            "z_max": 160
           },
           "seg_preserved": true,
           "seg_bounds": {
@@ -190,7 +190,7 @@
             "y_min": 17,
             "y_max": 224,
             "z_min": 0,
-            "z_max": 152
+            "z_max": 160
           },
           "seg_preserved": true,
           "seg_bounds": {
@@ -219,7 +219,7 @@
             "y_min": 17,
             "y_max": 224,
             "z_min": 0,
-            "z_max": 152
+            "z_max": 160
           },
           "seg_preserved": true,
           "seg_bounds": {
@@ -248,7 +248,7 @@
             "y_min": 17,
             "y_max": 224,
             "z_min": 0,
-            "z_max": 152
+            "z_max": 160
           },
           "seg_preserved": true,
           "seg_bounds": {
@@ -277,7 +277,7 @@
             "y_min": 17,
             "y_max": 224,
             "z_min": 0,
-            "z_max": 152
+            "z_max": 160
           },
           "seg_preserved": true,
           "seg_bounds": {
@@ -306,7 +306,7 @@
             "y_min": 17,
             "y_max": 224,
             "z_min": 0,
-            "z_max": 152
+            "z_max": 160
           },
           "seg_preserved": true,
           "seg_bounds": {
@@ -335,7 +335,7 @@
             "y_min": 17,
             "y_max": 224,
             "z_min": 0,
-            "z_max": 152
+            "z_max": 160
           },
           "seg_preserved": true,
           "seg_bounds": {

@@ -61,8 +61,8 @@ fi
 
 # Print validated crop bounds info (used everywhere)
 echo "🔧 USING VALIDATED DWT-FRIENDLY CROP BOUNDS (used everywhere)"
-echo "   Crop bounds: (39:199, 17:225, 0:152)"
-echo "   Output dims: 160x208x152 (42% memory reduction)"
+echo "   Crop bounds: (39:199, 17:225, 0:160)"
+echo "   Output dims: 160x208x160 (42% memory reduction)"
 echo "   DWT dims: 80x104x76 (perfect wavelet compatibility)"
 echo "   Brain preservation: 100% validated"
 

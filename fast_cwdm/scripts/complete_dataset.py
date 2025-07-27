@@ -36,11 +36,11 @@ import torch.nn.functional as F
 CROP_BOUNDS = {
     'x_min': 39, 'x_max': 199,  # width: 160 (divisible by 16)
     'y_min': 17, 'y_max': 225,  # height: 208 (divisible by 16)
-    'z_min': 0,  'z_max': 152   # depth: 155 (original)
+    'z_min': 0,  'z_max': 160   # depth: 155 (original)
 }
 
-ORIGINAL_SHAPE = (240, 240, 152)
-CROPPED_SHAPE = (160, 208, 152)
+ORIGINAL_SHAPE = (240, 240, 160)
+CROPPED_SHAPE = (160, 208, 160)
 MODALITIES = ['t1n', 't1c', 't2w', 't2f']
 
 def create_brain_mask_from_target(target, threshold=0.01):

@@ -1,9 +1,7 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: 2-tr-multitask
-  labels:
-    app: tr-multitask
+  name: 3-tr-multitask-t2w
 spec:
   nodeSelector:
     #topology.kubernetes.io/region: us-west
@@ -83,7 +81,7 @@ spec:
             
             pip install "numpy<2.0" torch nibabel matplotlib monai[all]
 
-            python multi-task/train.py --batch_size 1 --max_epoch 2 --target_modality all
+            python multi-task/train.py --batch_size 1 --max_epoch 2 --target_modality t2w
 
 
             tail -f /dev/null
@@ -110,7 +108,7 @@ spec:
         sizeLimit: 50Gi
     - name: data
       persistentVolumeClaim:
-        claimName: brats2025-2
+        claimName: brats2025-3
     - name: shm
       emptyDir:
         medium: Memory

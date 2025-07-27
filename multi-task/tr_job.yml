@@ -1,9 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: multitask-brats-job
-  labels:
-    app: multitask-brats
+  name: 4-multitask-job-t2f
 spec:
   backoffLimit: 0
   template:
@@ -114,7 +112,7 @@ spec:
             sizeLimit: 50Gi
         - name: data
           persistentVolumeClaim:
-            claimName: brats2025-5
+            claimName: brats2025-4
         - name: shm
           emptyDir:
             medium: Memory

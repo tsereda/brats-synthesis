@@ -1,13 +1,18 @@
 #!/bin/bash
 
-# Updated run.sh with VALIDATED WAVELET-FRIENDLY crop bounds
+# Enhanced run.sh with VALIDATED WAVELET-FRIENDLY crop bounds and improved validation strategy
 # 42% memory reduction, 100% brain preservation, DWT-compatible dimensions
+# NEW: Proper train/val split with validation-based model selection
 
 # Parse command line arguments
 SAMPLING_STRATEGY=""
 TIMESTEPS=""
 MODE="train"
 TRAIN_MODALITY="t1n"
+VAL_INTERVAL=100
+VAL_SPLIT_RATIO=0.2
+EARLY_STOPPING_PATIENCE=10
+
 while [[ $# -gt 0 ]]; do
   case $1 in
     --mode)
@@ -26,16 +31,50 @@ while [[ $# -gt 0 ]]; do
       TRAIN_MODALITY="$2"
       shift 2
       ;;
+    --val_interval)
+      VAL_INTERVAL="$2"
+      shift 2
+      ;;
+    --val_split_ratio)
+      VAL_SPLIT_RATIO="$2"
+      shift 2
+      ;;
+    --early_stopping_patience)
+      EARLY_STOPPING_PATIENCE="$2"
+      shift 2
+      ;;
     --help)
-      echo "Usage: $0 [--mode MODE] [--sampling-strategy STRATEGY] [--timesteps STEPS] [--train_modality MODALITY]"
-      echo "  --mode: train, sample, auto (default: train)"
-      echo "  --sampling-strategy: direct or sampled (default: direct)"
-      echo "  --timesteps: number of sampling steps (default: 0 for default 1000)"
-      echo "  --train_modality: t1n, t1c, t2w, t2f, all (default: t1n)"
+      echo "Usage: $0 [OPTIONS]"
+      echo ""
+      echo "OPTIONS:"
+      echo "  --mode MODE                    train, sample, auto (default: train)"
+      echo "  --sampling-strategy STRATEGY   direct or sampled (default: direct)"
+      echo "  --timesteps STEPS             number of sampling steps (default: 1000)"
+      echo "  --train_modality MODALITY     t1n, t1c, t2w, t2f, all (default: t1n)"
+      echo "  --val_interval STEPS          validation interval in steps (default: 100)"
+      echo "  --val_split_ratio RATIO       validation split ratio (default: 0.2)"
+      echo "  --early_stopping_patience N   early stopping patience (default: 10)"
+      echo ""
+      echo "VALIDATION FEATURES:"
+      echo "  - Automatic train/val split from training data"
+      echo "  - Brain-masked SSIM validation every --val_interval steps"
+      echo "  - Save best models based on validation SSIM"
+      echo "  - Early stopping if no improvement for --early_stopping_patience validations"
+      echo ""
+      echo "EXAMPLES:"
+      echo "  # Standard training with validation"
+      echo "  $0 --mode train --train_modality t1n"
+      echo ""
+      echo "  # Fast validation for debugging"
+      echo "  $0 --mode train --train_modality t1n --val_interval 50"
+      echo ""
+      echo "  # Different validation split"
+      echo "  $0 --mode train --train_modality t1n --val_split_ratio 0.15"
       exit 0
       ;;
     *)
       echo "Unknown option $1"
+      echo "Use --help for usage information"
       exit 1
       ;;
   esac
@@ -58,17 +97,27 @@ if [[ -z "$TIMESTEPS" ]]; then
   TIMESTEPS=1000
 fi
 
-
-# Print validated crop bounds info (used everywhere)
-echo "🔧 USING VALIDATED DWT-FRIENDLY CROP BOUNDS (used everywhere)"
+# Print enhanced training info
+echo "🧠 ENHANCED FAST-CWDM TRAINING WITH VALIDATION"
+echo "=============================================="
+echo ""
+echo "🔧 VALIDATED DWT-FRIENDLY CROP BOUNDS (used everywhere)"
 echo "   Crop bounds: (39:199, 17:225, 0:160)"
 echo "   Output dims: 160x224x160 (42% memory reduction)"
-echo "   DWT dims: 80x104x76 (perfect wavelet compatibility)"
+echo "   DWT dims: 80x112x80 (perfect wavelet compatibility)"
 echo "   Brain preservation: 100% validated"
+echo ""
+echo "🧪 VALIDATION STRATEGY"
+echo "   Val split ratio: $VAL_SPLIT_RATIO (${VAL_SPLIT_RATIO%.*}% for validation)"
+echo "   Val interval: every $VAL_INTERVAL training steps"
+echo "   Early stopping: after $EARLY_STOPPING_PATIENCE validations without improvement"
+echo "   Metric: Brain-masked SSIM (correlates with synthesis quality)"
+echo "   Model selection: Save best validation SSIM, not training loss"
+echo ""
 
 # detailed settings updated for validated crop bounds
 if [[ $MODEL == 'unet' ]]; then
-  echo "MODEL: WDM (U-Net) with validated crop bounds";
+  echo "MODEL: WDM (U-Net) with validated crop bounds and enhanced validation";
   CHANNEL_MULT=1,2,2,4,4;
   ADDITIVE_SKIP=False;      # Set True to save memory
   BATCH_SIZE=2;
@@ -82,13 +131,17 @@ else
 fi
 
 # Print the values being used
-echo "Using sampling strategy: $SAMPLE_SCHEDULE"
-echo "Using timesteps: $TIMESTEPS"
-echo "Using image size: $IMAGE_SIZE (height from validated crop)"
+echo "⚙️  CONFIGURATION"
+echo "   Sampling strategy: $SAMPLE_SCHEDULE"
+echo "   Timesteps: $TIMESTEPS"
+echo "   Image size: $IMAGE_SIZE (height from validated crop)"
+echo "   Mode: $MODE"
+echo "   Train modality: $TRAIN_MODALITY"
 
 # Set data directories based on mode and dataset
 if [[ $MODE == 'train' ]]; then
-  echo "MODE: training with validated crop bounds";
+  echo ""
+  echo "🚂 MODE: Enhanced training with validation and crop bounds";
   if [[ $DATASET == 'brats' ]]; then
     echo "DATASET: BRATS";
     DATA_DIR=./datasets/BRATS2023/training;
@@ -98,7 +151,8 @@ if [[ $MODE == 'train' ]]; then
 
 elif [[ $MODE == 'sample' ]]; then
   BATCH_SIZE=1;
-  echo "MODE: sampling (image-to-image translation) with validated crop bounds";
+  echo ""
+  echo "🔍 MODE: sampling (image-to-image translation) with validated crop bounds";
   if [[ $DATASET == 'brats' ]]; then
     echo "DATASET: BRATS";
     DATA_DIR=./datasets/BRATS2023/validation;
@@ -108,7 +162,8 @@ elif [[ $MODE == 'sample' ]]; then
 
 elif [[ $MODE == 'auto' ]]; then
   BATCH_SIZE=1;
-  echo "MODE: sampling in automatic mode with validated crop bounds";
+  echo ""
+  echo "🤖 MODE: sampling in automatic mode with validated crop bounds";
   if [[ $DATASET == 'brats' ]]; then
     echo "DATASET: BRATS";
     DATA_DIR=./datasets/BRATS2023/pseudo_validation;
@@ -154,7 +209,10 @@ TRAIN="
 --image_size=${IMAGE_SIZE}
 --use_fp16=False
 --lr=1e-5
---save_interval=50
+--save_interval=500
+--val_interval=${VAL_INTERVAL}
+--val_split_ratio=${VAL_SPLIT_RATIO}
+--early_stopping_patience=${EARLY_STOPPING_PATIENCE}
 --num_workers=12
 --devices=${GPU}
 "
@@ -174,59 +232,82 @@ SAMPLE="
 --clip_denoised=True
 "
 
+echo ""
+echo "🚀 STARTING EXECUTION"
+echo "====================="
+
 # Run the appropriate script based on mode
 if [[ $MODE == 'train' ]]; then
   if [[ $TRAIN_MODALITY == 'all' ]]; then
-    echo "Training all modalities with validated crop bounds";
+    echo ""
+    echo "🔄 Training all modalities with enhanced validation";
     MODALITIES=("t1n" "t1c" "t2w" "t2f")
     for CONTRAST in "${MODALITIES[@]}"; do
       CONTR=$CONTRAST
-      echo "Training for modality: $CONTRAST"
-      echo "Expected memory reduction: ~42% vs original"
+      echo ""
+      echo "📊 Training modality: $CONTRAST"
+      echo "   Expected memory reduction: ~42% vs original"
+      echo "   Validation: Every $VAL_INTERVAL steps with brain-masked SSIM"
+      echo "   Early stopping: After $EARLY_STOPPING_PATIENCE validations without improvement"
       START_TIME=$(date +%s)
       python scripts/train.py $TRAIN --contr=${CONTR} $COMMON
       END_TIME=$(date +%s)
       ELAPSED=$((END_TIME - START_TIME))
-      echo "[TIMING] Training for $CONTRAST completed in $ELAPSED seconds ($((ELAPSED/60)) min $((ELAPSED%60)) sec)"
-      echo "✅ $CONTRAST training completed with validated crop bounds"
+      echo ""
+      echo "⏱️  [TIMING] Training for $CONTRAST completed in $ELAPSED seconds ($((ELAPSED/60)) min $((ELAPSED%60)) sec)"
+      echo "✅ $CONTRAST training completed with enhanced validation"
     done
   else
     # single-modality case
-    echo "Training single modality: $TRAIN_MODALITY with validated crop bounds"
-    echo "Expected memory reduction: ~42% vs original"
+    echo ""
+    echo "📊 Training single modality: $TRAIN_MODALITY"
+    echo "   Expected memory reduction: ~42% vs original"
+    echo "   Validation: Every $VAL_INTERVAL steps with brain-masked SSIM"
+    echo "   Early stopping: After $EARLY_STOPPING_PATIENCE validations without improvement"
     START_TIME=$(date +%s)
     python scripts/train.py $TRAIN --contr=${CONTR} $COMMON
     END_TIME=$(date +%s)
     ELAPSED=$((END_TIME - START_TIME))
-    echo "[TIMING] Training for $TRAIN_MODALITY completed in $ELAPSED seconds ($((ELAPSED/60)) min $((ELAPSED%60)) sec)"
-    echo "✅ $TRAIN_MODALITY training completed with validated crop bounds"
+    echo ""
+    echo "⏱️  [TIMING] Training for $TRAIN_MODALITY completed in $ELAPSED seconds ($((ELAPSED/60)) min $((ELAPSED%60)) sec)"
+    echo "✅ $TRAIN_MODALITY training completed with enhanced validation"
   fi
 
 elif [[ $MODE == 'sample' ]]; then
-  echo "Timing sampling run with validated crop bounds..."
+  echo ""
+  echo "🔍 Timing sampling run with validated crop bounds..."
   START_TIME=$(date +%s)
   python scripts/sample.py $SAMPLE $COMMON --contr=${CONTR}
   END_TIME=$(date +%s)
   ELAPSED=$((END_TIME - START_TIME))
-  echo "[TIMING] Sampling completed in $ELAPSED seconds ($((ELAPSED/60)) min $((ELAPSED%60)) sec)"
+  echo ""
+  echo "⏱️  [TIMING] Sampling completed in $ELAPSED seconds ($((ELAPSED/60)) min $((ELAPSED%60)) sec)"
   echo "✅ Sampling completed with validated crop bounds"
 
 elif [[ $MODE == 'auto' ]]; then
-  echo "Timing auto-sampling run with validated crop bounds..."
+  echo ""
+  echo "🤖 Timing auto-sampling run with validated crop bounds..."
   START_TIME=$(date +%s)
   python scripts/sample_auto.py $SAMPLE $COMMON
   END_TIME=$(date +%s)
   ELAPSED=$((END_TIME - START_TIME))
-  echo "[TIMING] Auto-sampling completed in $ELAPSED seconds ($((ELAPSED/60)) min $((ELAPSED%60)) sec)"
+  echo ""
+  echo "⏱️  [TIMING] Auto-sampling completed in $ELAPSED seconds ($((ELAPSED/60)) min $((ELAPSED%60)) sec)"
   echo "✅ Auto-sampling completed with validated crop bounds"
 
 else
-  echo "MODE NOT FOUND -> Check the supported modes again";
+  echo "❌ MODE NOT FOUND -> Check the supported modes again";
 fi
 
 echo ""
-echo "🎯 VALIDATED CROP BOUNDS IMPLEMENTATION COMPLETE"
-echo "   Memory efficiency: ~42% reduction"
+echo "🎯 ENHANCED FAST-CWDM IMPLEMENTATION COMPLETE"
+echo "============================================="
+echo "   Memory efficiency: ~42% reduction vs original"
 echo "   Brain preservation: 100% validated"
 echo "   DWT compatibility: Perfect"
-echo "   Dimensions: 160x224x155 → 80x104x77 (DWT)"
+echo "   Validation strategy: Brain-masked SSIM with early stopping"
+echo "   Model selection: Best validation performance, not training loss"
+echo "   Dimensions: 160x224x160 → 80x112x80 (DWT)"
+echo ""
+echo "🏆 Best models are saved based on validation SSIM in /data/checkpoints/"
+echo "   Look for files with 'BEST_val_ssim' in the name"

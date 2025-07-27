@@ -150,9 +150,9 @@ def prepare_conditioning(available_modalities, missing_modality, device):
 def synthesize_modality_shared(model, diffusion, available_modalities, missing_modality, device, 
                               metrics_calculator=None, target_data=None):
     """
-    ENHANCED: Synthesis with comprehensive error checking and debugging
+    FIXED: Synthesis with proper noise/conditioning separation for i2i mode
     """
-    print(f"\n=== Synthesizing {missing_modality} (ENHANCED DEBUG PIPELINE) ===")
+    print(f"\n=== Synthesizing {missing_modality} (FIXED PIPELINE) ===")
     
     try:
         # Step 1: Prepare conditioning with detailed checks
@@ -166,7 +166,7 @@ def synthesize_modality_shared(model, diffusion, available_modalities, missing_m
         # Step 2: Create noise tensor with validation
         print("Step 2: Creating noise tensor...")
         _, _, cond_d, cond_h, cond_w = cond.shape
-        noise_shape = (1, 8, cond_d, cond_h, cond_w)
+        noise_shape = (1, 8, cond_d, cond_h, cond_w)  # Only 8 channels for noise
         print(f"   Target noise shape: {noise_shape}")
         
         noise = th.randn(*noise_shape, device=device, dtype=cond.dtype)
@@ -175,27 +175,11 @@ def synthesize_modality_shared(model, diffusion, available_modalities, missing_m
         print(f"   Noise dtype: {noise.dtype}")
         print(f"   Noise range: [{noise.min():.4f}, {noise.max():.4f}]")
         
-        # Step 3: Combine conditioning and noise
-        print("Step 3: Combining input tensors...")
-        print(f"   Before concat - Noise: {noise.shape}, Cond: {cond.shape}")
-        
-        # Check device consistency
-        if noise.device != cond.device:
-            print(f"   ⚠️  Device mismatch detected! Moving noise to {cond.device}")
-            noise = noise.to(cond.device)
-        
-        # Check dtype consistency  
-        if noise.dtype != cond.dtype:
-            print(f"   ⚠️  Dtype mismatch detected! Converting noise to {cond.dtype}")
-            noise = noise.to(dtype=cond.dtype)
-        
-        combined_input = th.cat([noise, cond], dim=1)
-        print(f"✅ Combined input shape: {combined_input.shape}")
-        print(f"   Expected: [1, 32, {cond_d}, {cond_h}, {cond_w}]")
-        
-        if combined_input.shape[1] != 32:
-            raise ValueError(f"Expected 32 channels, got {combined_input.shape[1]}. "
-                           f"Noise: {noise.shape[1]}, Cond: {cond.shape[1]}")
+        # Step 3: No concatenation - keep noise and conditioning separate!
+        print("Step 3: Keeping noise and conditioning separate...")
+        print(f"   Noise: {noise.shape}")
+        print(f"   Conditioning: {cond.shape}")
+        print(f"   These will be handled separately in the diffusion process")
         
         # Step 4: Run diffusion sampling with monitoring
         print("Step 4: Running diffusion sampling...")
@@ -209,11 +193,13 @@ def synthesize_modality_shared(model, diffusion, available_modalities, missing_m
             step_count = 0
             
             try:
+                # FIXED: Pass noise and conditioning separately
                 for sample_dict in diffusion.p_sample_loop_progressive(
                     model=model,
-                    shape=combined_input.shape,
+                    shape=noise.shape,  # Only noise shape (8 channels)
                     time=diffusion.num_timesteps,
-                    noise=combined_input,
+                    noise=noise,  # Only noise (8 channels)
+                    cond=cond,    # Conditioning passed separately
                     clip_denoised=True,
                     model_kwargs={}
                 ):
@@ -239,7 +225,7 @@ def synthesize_modality_shared(model, diffusion, available_modalities, missing_m
         
         # Step 5: Extract wavelet components
         print("Step 5: Extracting wavelet components...")
-        sample_dwt = sample[:, :8, :, :, :]  # Take only first 8 channels
+        sample_dwt = sample  # Should already be 8 channels
         print(f"✅ DWT sample shape: {sample_dwt.shape}")
         print(f"   Sample range: [{sample_dwt.min():.4f}, {sample_dwt.max():.4f}]")
         

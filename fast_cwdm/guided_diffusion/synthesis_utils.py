@@ -190,46 +190,59 @@ def synthesize_modality_shared(model, diffusion, available_modalities, missing_m
         
         with th.no_grad():
             final_sample = None
-            step_count = 0
-            
-            try:
-                # FIXED: Pass noise and conditioning separately
-                for sample_dict in diffusion.p_sample_loop_progressive(
-                    model=model,
-                    shape=noise.shape,  # Only noise shape (8 channels)
-                    time=diffusion.num_timesteps,
-                    noise=noise,  # Only noise (8 channels)
-                    cond=cond,    # Conditioning passed separately
-                    clip_denoised=True,
-                    model_kwargs={}
-                ):
-                    final_sample = sample_dict
-                    step_count += 1
-                    
-                    # Progress monitoring (every 10 steps)
-                    if step_count % 10 == 0 or step_count == 1:
-                        print(f"   Sampling step {step_count}/{diffusion.num_timesteps}")
-                
-                print(f"✅ Sampling completed in {step_count} steps")
-                
-            except Exception as sampling_error:
-                print(f"❌ Sampling failed at step {step_count}:")
-                print(f"   Error: {str(sampling_error)}")
-                raise sampling_error
-            
-            if final_sample is None:
-                raise ValueError("Sampling returned None - no samples generated")
-            
-            sample = final_sample["sample"]
-            print(f"✅ Raw sample shape: {sample.shape}")
-        
+    try:
+        # Step 1: Prepare conditioning with detailed checks
+        print("Step 1: Preparing conditioning...")
+        cond = prepare_conditioning_debug(available_modalities, missing_modality, device)
+        print(f"✅ Conditioning shape: {cond.shape}")
+        print(f"   Conditioning device: {cond.device}")
+        print(f"   Conditioning dtype: {cond.dtype}")
+        print(f"   Conditioning range: [{cond.min():.4f}, {cond.max():.4f}]")
+
+        # Step 2: Create noise tensor with validation
+        print("Step 2: Creating noise tensor...")
+        _, _, cond_d, cond_h, cond_w = cond.shape
+        noise_shape = (1, 8, cond_d, cond_h, cond_w)  # Only 8 channels for noise
+        print(f"   Target noise shape: {noise_shape}")
+
+        noise = th.randn(*noise_shape, device=device, dtype=cond.dtype)
+        print(f"✅ Noise shape: {noise.shape}")
+        print(f"   Noise device: {noise.device}")
+        print(f"   Noise dtype: {noise.dtype}")
+        print(f"   Noise range: [{noise.min():.4f}, {noise.max():.4f}]")
+
+        # Step 3: Concatenate noise and conditioning for model input
+        print("Step 3: Concatenating noise and conditioning for model input...")
+        input_tensor = th.cat([noise, cond], dim=1)
+        print(f"   Input tensor shape: {input_tensor.shape}")
+        print(f"   (Should be [1, 32, D, H, W])")
+
+        # Step 4: Run diffusion sampling with monitoring
+        print("Step 4: Running diffusion sampling...")
+        print(f"   Model mode: {getattr(diffusion, 'mode', 'default')}")
+        print(f"   Timesteps: {diffusion.num_timesteps}")
+
+        model.eval()
+
+        with th.no_grad():
+            for sample_dict in diffusion.p_sample_loop_progressive(
+                model=model,
+                shape=input_tensor.shape,
+                time=diffusion.num_timesteps,
+                noise=input_tensor,
+                clip_denoised=True,
+                model_kwargs={}
+            ):
+                sample = sample_dict["sample"]
+                # For brevity, break after first sample (or keep as needed)
+                break
+
         # Step 5: Extract wavelet components
         print("Step 5: Extracting wavelet components...")
-        sample_dwt = sample  # Should already be 8 channels
-        print(f"✅ DWT sample shape: {sample_dwt.shape}")
-        print(f"   Sample range: [{sample_dwt.min():.4f}, {sample_dwt.max():.4f}]")
-        
-        # Step 6: Convert back to spatial domain
+        sample_dwt = sample
+    except Exception as e:
+        print(f"❌ Exception in synthesize_modality_shared: {e}")
+        raise
         print("Step 6: Converting to spatial domain...")
         idwt = IDWT_3D("haar")
         

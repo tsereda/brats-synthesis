@@ -58,7 +58,7 @@ spec:
             - |
               sudo mkdir /data/multitask_models/
               sudo chmod 777 /data/multitask_models/
-              git clone -b bettervalidation https://github.com/tsereda/brats-synthesis.git ${REPO_PATH}
+              git clone https://github.com/tsereda/brats-synthesis.git ${REPO_PATH}
               cd ${REPO_PATH}
               
               sudo apt-get update && sudo apt-get install -y p7zip-full wget git

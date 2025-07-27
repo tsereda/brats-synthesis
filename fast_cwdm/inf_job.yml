@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: 3-inf-fastcwdm-t21n
+  name: 4-inf-fastcwdm-t2w
 spec:
   backoffLimit: 0
   template:
@@ -66,7 +66,7 @@ spec:
               mkdir -p ./checkpoints
 
               ls -la /data/checkpoints/
-              cp /data/checkpoints/brats_t1n_069850_sampled_100.pt  ./checkpoints/
+              cp /data/checkpoints/brats_t2w_072700_sampled_100.pt  ./checkpoints/
               ls -la ./checkpoints/
 
               python fast_cwdm/scripts/complete_dataset.py \
@@ -74,7 +74,7 @@ spec:
                 --checkpoint_dir ./checkpoints \
                 --device cuda:0 \
                 --evaluation_mode \
-                --target_modality t1n
+                --target_modality t2w
          
           volumeMounts:
             - name: workspace
@@ -100,7 +100,7 @@ spec:
             sizeLimit: 50Gi
         - name: data
           persistentVolumeClaim:
-            claimName: brats2025-3
+            claimName: brats2025-4
         - name: shm
           emptyDir:
             medium: Memory

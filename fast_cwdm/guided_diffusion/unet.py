@@ -793,7 +793,7 @@ class UNetModel(nn.Module):
             if self.additive_skips:
                 h = (h + new_hs) / 2
             else:
--                # Robust padding to fix dimension mismatches before concatenation
+                # Robust padding to fix dimension mismatches before concatenation
                 if h.shape[2:] != new_hs.shape[2:]:
                     print(f"[UNET FIX] Dimension mismatch: h={h.shape[2:]} vs new_hs={new_hs.shape[2:]}")
                     # Pad both to MAXIMUM dimensions (no data loss!)

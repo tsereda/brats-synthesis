@@ -2,6 +2,7 @@ import copy
 import functools
 import os
 import glob
+import time
 
 import blobfile as bf
 import torch as th
@@ -17,6 +18,9 @@ import numpy as np
 from . import dist_util, logger
 from .resample import LossAwareSampler, UniformSampler
 from fast_cwdm.DWT_IDWT.DWT_IDWT_layer import DWT_3D, IDWT_3D
+from fast_cwdm.guided_diffusion.synthesis_utils import (
+    ComprehensiveMetrics, synthesize_modality_shared, MODALITIES
+)
 
 INITIAL_LOG_LOSS_SCALE = 20.0
 
@@ -36,6 +40,7 @@ class TrainLoop:
         model,
         diffusion,
         data,
+        val_data=None,  # NEW: Validation dataset
         batch_size,
         in_channels,
         image_size,
@@ -45,6 +50,7 @@ class TrainLoop:
         log_interval,
         contr,
         save_interval,
+        val_interval=100,  # NEW: Validation interval
         resume_checkpoint,
         resume_step,
         use_fp16=False,
@@ -58,12 +64,14 @@ class TrainLoop:
         loss_level='image',
         sample_schedule='direct',
         diffusion_steps=1000,
+        early_stopping_patience=10,  # NEW: Early stopping
     ):
         self.summary_writer = summary_writer
         self.mode = mode
         self.model = model
         self.diffusion = diffusion
         self.datal = data
+        self.val_data = val_data  # NEW: Validation data
         self.dataset = dataset
         self.iterdatal = iter(data)
         self.batch_size = batch_size
@@ -79,6 +87,7 @@ class TrainLoop:
         )
         self.log_interval = log_interval
         self.save_interval = save_interval
+        self.val_interval = val_interval  # NEW
         self.resume_checkpoint = resume_checkpoint
         self.use_fp16 = use_fp16
         if self.use_fp16:
@@ -97,15 +106,25 @@ class TrainLoop:
         self.sync_cuda = th.cuda.is_available()
         self.sample_schedule = sample_schedule
         self.diffusion_steps = diffusion_steps
+        self.early_stopping_patience = early_stopping_patience
         
-        # NEW: Track best loss and checkpoint for each modality
-        self.best_losses = {}  # Will store best loss for each modality
-        self.best_checkpoints = {}  # Will store path to best checkpoint for each modality
+        # NEW: Enhanced validation tracking
+        self.best_val_ssim = -np.inf
+        self.steps_without_improvement = 0
+        self.best_checkpoint_path = None
         self.checkpoint_dir = os.path.join(get_blob_logdir(), 'checkpoints')
         os.makedirs(self.checkpoint_dir, exist_ok=True)
         
-        # Load existing best losses if resuming
-        self._load_best_losses()
+        # NEW: Metrics calculator for validation
+        if self.val_data is not None:
+            self.metrics_calculator = ComprehensiveMetrics(dist_util.dev())
+            print(f"🧠 Validation enabled: {len(self.val_data)} cases, interval={self.val_interval}")
+        else:
+            self.metrics_calculator = None
+            print("⚠️  No validation data provided")
+        
+        # Load existing best SSIM if resuming
+        self._load_best_metrics()
         
         self._load_and_sync_parameters()
         self.opt = AdamW(self.model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
@@ -117,32 +136,179 @@ class TrainLoop:
                 "Training requires CUDA. "
             )
 
-    def _load_best_losses(self):
-        """Load best losses from file if it exists"""
-        best_losses_file = os.path.join(self.checkpoint_dir, 'best_losses.txt')
-        if os.path.exists(best_losses_file):
+    def _load_best_metrics(self):
+        """Load best validation metrics from file if it exists"""
+        best_metrics_file = os.path.join(self.checkpoint_dir, 'best_val_metrics.txt')
+        if os.path.exists(best_metrics_file):
             try:
-                with open(best_losses_file, 'r') as f:
+                with open(best_metrics_file, 'r') as f:
                     for line in f:
-                        if line.strip():
-                            modality, loss_str = line.strip().split(':')
-                            self.best_losses[modality] = float(loss_str)
-                print(f"Loaded best losses: {self.best_losses}")
+                        if line.strip() and 'best_val_ssim:' in line:
+                            self.best_val_ssim = float(line.strip().split(':')[1])
+                print(f"Loaded best validation SSIM: {self.best_val_ssim:.4f}")
             except Exception as e:
-                print(f"Error loading best losses: {e}")
-                self.best_losses = {}
-        else:
-            self.best_losses = {}
+                print(f"Error loading best metrics: {e}")
+                self.best_val_ssim = -np.inf
 
-    def _save_best_losses(self):
-        """Save best losses to file"""
-        best_losses_file = os.path.join(self.checkpoint_dir, 'best_losses.txt')
+    def _save_best_metrics(self):
+        """Save best validation metrics to file"""
+        best_metrics_file = os.path.join(self.checkpoint_dir, 'best_val_metrics.txt')
         try:
-            with open(best_losses_file, 'w') as f:
-                for modality, loss in self.best_losses.items():
-                    f.write(f"{modality}:{loss}\n")
+            with open(best_metrics_file, 'w') as f:
+                f.write(f"best_val_ssim:{self.best_val_ssim}\n")
+                f.write(f"modality:{self.contr}\n")
+                f.write(f"step:{self.step + self.resume_step}\n")
         except Exception as e:
-            print(f"Error saving best losses: {e}")
+            print(f"Error saving best metrics: {e}")
+
+    def run_validation(self):
+        """
+        Run validation synthesis and calculate SSIM metrics.
+        Returns average validation SSIM.
+        """
+        if self.val_data is None or self.metrics_calculator is None:
+            return None
+        
+        print(f"\n🧪 Running validation at step {self.step + self.resume_step}...")
+        self.model.eval()
+        
+        val_metrics = []
+        val_start_time = time.time()
+        
+        # Sample a few validation cases for efficiency
+        max_val_cases = min(10, len(self.val_data))  # Limit for speed
+        val_indices = np.random.choice(len(self.val_data), max_val_cases, replace=False)
+        
+        with th.no_grad():
+            for i, val_idx in enumerate(val_indices):
+                try:
+                    batch = self.val_data[val_idx]
+                    
+                    # Move to device
+                    batch['t1n'] = batch['t1n'].to(dist_util.dev()).unsqueeze(0)  # Add batch dim
+                    batch['t1c'] = batch['t1c'].to(dist_util.dev()).unsqueeze(0)
+                    batch['t2w'] = batch['t2w'].to(dist_util.dev()).unsqueeze(0)
+                    batch['t2f'] = batch['t2f'].to(dist_util.dev()).unsqueeze(0)
+                    
+                    # Select target and conditioning modalities based on self.contr
+                    if self.contr == 't1n':
+                        target = batch['t1n'][0]  # Remove batch dim for metrics
+                        available_modalities = {'t1c': batch['t1c'], 't2w': batch['t2w'], 't2f': batch['t2f']}
+                    elif self.contr == 't1c':
+                        target = batch['t1c'][0]
+                        available_modalities = {'t1n': batch['t1n'], 't2w': batch['t2w'], 't2f': batch['t2f']}
+                    elif self.contr == 't2w':
+                        target = batch['t2w'][0]
+                        available_modalities = {'t1n': batch['t1n'], 't1c': batch['t1c'], 't2f': batch['t2f']}
+                    elif self.contr == 't2f':
+                        target = batch['t2f'][0]
+                        available_modalities = {'t1n': batch['t1n'], 't1c': batch['t1c'], 't2w': batch['t2w']}
+                    else:
+                        continue
+                    
+                    # Synthesize using shared function
+                    synthesized, metrics = synthesize_modality_shared(
+                        self.model, self.diffusion, available_modalities, self.contr,
+                        dist_util.dev(), self.metrics_calculator, target
+                    )
+                    
+                    if metrics and 'ssim' in metrics:
+                        val_metrics.append(metrics['ssim'])
+                        print(f"  Val case {i+1}/{max_val_cases}: SSIM={metrics['ssim']:.4f}")
+                    
+                except Exception as e:
+                    print(f"  Error in validation case {i+1}: {e}")
+                    continue
+        
+        self.model.train()  # Back to training mode
+        
+        val_end_time = time.time()
+        val_duration = val_end_time - val_start_time
+        
+        if val_metrics:
+            avg_val_ssim = np.mean(val_metrics)
+            std_val_ssim = np.std(val_metrics)
+            print(f"🧠 Validation SSIM: {avg_val_ssim:.4f} ± {std_val_ssim:.4f} "
+                  f"({len(val_metrics)} cases, {val_duration:.1f}s)")
+            
+            # Log to wandb and tensorboard
+            wandb_log_dict = {
+                'val/ssim_mean': avg_val_ssim,
+                'val/ssim_std': std_val_ssim,
+                'val/num_cases': len(val_metrics),
+                'val/duration': val_duration,
+                'step': self.step + self.resume_step
+            }
+            wandb.log(wandb_log_dict, step=self.step + self.resume_step)
+            
+            if self.summary_writer is not None:
+                self.summary_writer.add_scalar('val/ssim_mean', avg_val_ssim, 
+                                               global_step=self.step + self.resume_step)
+                self.summary_writer.add_scalar('val/ssim_std', std_val_ssim,
+                                               global_step=self.step + self.resume_step)
+            
+            return avg_val_ssim
+        else:
+            print("❌ No valid validation metrics calculated")
+            return None
+
+    def save_if_best_val_ssim(self, val_ssim):
+        """Save checkpoint only if validation SSIM improves"""
+        if val_ssim is None:
+            return False
+        
+        is_best = val_ssim > self.best_val_ssim
+        
+        if is_best and dist.get_rank() == 0:
+            # Update best metrics
+            old_best = self.best_val_ssim
+            self.best_val_ssim = val_ssim
+            self.steps_without_improvement = 0
+            
+            print(f"🎯 NEW BEST VAL SSIM for {self.contr}! {old_best:.4f} → {val_ssim:.4f}")
+            
+            # Remove old best checkpoint if it exists
+            if self.best_checkpoint_path and os.path.exists(self.best_checkpoint_path):
+                try:
+                    os.remove(self.best_checkpoint_path)
+                    print(f"Removed old checkpoint: {self.best_checkpoint_path}")
+                except Exception as e:
+                    print(f"Error removing old checkpoint: {e}")
+            
+            # Save new best checkpoint
+            filename = f"brats_{self.contr}_BEST_val_ssim_{val_ssim:.4f}_step_{(self.step+self.resume_step):06d}_{self.sample_schedule}_{self.diffusion_steps}.pt"
+            self.best_checkpoint_path = os.path.join(self.checkpoint_dir, filename)
+            
+            try:
+                with bf.BlobFile(self.best_checkpoint_path, "wb") as f:
+                    th.save(self.model.state_dict(), f)
+                
+                print(f"✅ Saved new best checkpoint: {self.best_checkpoint_path}")
+                
+                # Save best metrics to file
+                self._save_best_metrics()
+                
+                # Save optimizer state for best model
+                opt_save_path = os.path.join(self.checkpoint_dir, f"opt_best_{self.contr}_val_ssim.pt")
+                with bf.BlobFile(opt_save_path, "wb") as f:
+                    th.save(self.opt.state_dict(), f)
+                print(f"💾 Saved optimizer state: {opt_save_path}")
+                
+            except Exception as e:
+                print(f"❌ Error saving checkpoint: {e}")
+                return False
+            
+            return True
+        else:
+            if not is_best:
+                self.steps_without_improvement += 1
+                print(f"Val SSIM {val_ssim:.4f} not better than best {self.best_val_ssim:.4f} "
+                      f"({self.steps_without_improvement}/{self.early_stopping_patience} patience)")
+            return False
+
+    def should_early_stop(self):
+        """Check if early stopping criteria is met"""
+        return self.steps_without_improvement >= self.early_stopping_patience
 
     def _load_and_sync_parameters(self):
         resume_checkpoint = find_resume_checkpoint() or self.resume_checkpoint
@@ -180,11 +346,20 @@ class TrainLoop:
         total_step_time = 0.0
         total_log_time = 0.0
         total_save_time = 0.0
+        total_val_time = 0.0
         start_time = time.time()
         t = time.time()
+        
         while not self.lr_anneal_steps or self.step + self.resume_step < self.lr_anneal_steps:
+            # Check early stopping
+            if self.should_early_stop():
+                print(f"\n🛑 Early stopping triggered after {self.steps_without_improvement} steps without improvement")
+                print(f"Best validation SSIM: {self.best_val_ssim:.4f}")
+                break
+            
             t_total = time.time() - t
             t = time.time()
+            
             # --- Data loading ---
             data_load_start = time.time()
             if self.dataset in ['brats']:
@@ -228,6 +403,8 @@ class TrainLoop:
                 'time/forward': total_step_time,
                 'time/total': t_total,
                 'loss/MSE': lossmse.item(),
+                'train/best_val_ssim': self.best_val_ssim,
+                'train/steps_without_improvement': self.steps_without_improvement,
                 'step': self.step + self.resume_step
             }
 
@@ -288,10 +465,18 @@ class TrainLoop:
             if self.step % self.log_interval == 0:
                 logger.dumpkvs()
 
-            # --- Saving (MODIFIED: Only save if best loss) ---
+            # --- NEW: Validation step ---
+            if self.step % self.val_interval == 0 and self.val_data is not None:
+                val_start = time.time()
+                val_ssim = self.run_validation()
+                self.save_if_best_val_ssim(val_ssim)
+                val_end = time.time()
+                total_val_time += val_end - val_start
+
+            # --- Saving (regular intervals for safety) ---
             if self.step % self.save_interval == 0:
                 save_start = time.time()
-                self.save_if_best(lossmse.item())
+                self.save_regular_checkpoint()
                 save_end = time.time()
                 total_save_time += save_end - save_start
                 if os.environ.get("DIFFUSION_TRAINING_TEST", "") and self.step > 0:
@@ -301,71 +486,42 @@ class TrainLoop:
             # Print profiling info every log_interval
             if self.step % self.log_interval == 0:
                 elapsed = time.time() - start_time
-                print(f"[PROFILE] Step {self.step}: Data {total_data_time:.2f}s, Step {total_step_time:.2f}s, Log {total_log_time:.2f}s, Save {total_save_time:.2f}s, Total {elapsed:.2f}s")
+                print(f"[PROFILE] Step {self.step}: Data {total_data_time:.2f}s, Step {total_step_time:.2f}s, "
+                      f"Log {total_log_time:.2f}s, Val {total_val_time:.2f}s, Save {total_save_time:.2f}s, Total {elapsed:.2f}s")
                 # Reset counters for next interval
                 total_data_time = 0.0
                 total_step_time = 0.0
                 total_log_time = 0.0
                 total_save_time = 0.0
+                total_val_time = 0.0
 
-        # Save the last checkpoint if it wasn't already saved.
-        if (self.step - 1) % self.save_interval != 0:
-            self.save_if_best(lossmse.item())
+        # Final validation and save
+        if self.val_data is not None:
+            final_val_ssim = self.run_validation()
+            self.save_if_best_val_ssim(final_val_ssim)
+            print(f"\n🎯 FINAL RESULTS:")
+            print(f"Best validation SSIM for {self.contr}: {self.best_val_ssim:.4f}")
+            if self.best_checkpoint_path:
+                print(f"Best model saved to: {self.best_checkpoint_path}")
 
-    def save_if_best(self, current_loss):
-        """Only save checkpoint if current loss is better than previous best"""
-        modality = self.contr
-        
-        # Check if this is the best loss so far
-        is_best = False
-        if modality not in self.best_losses or current_loss < self.best_losses[modality]:
-            is_best = True
-            self.best_losses[modality] = current_loss
-            
-        if is_best and dist.get_rank() == 0:
-            print(f"🎯 NEW BEST for {modality}! Loss: {current_loss:.6f}")
-            
-            # Remove old best checkpoint if it exists
-            if modality in self.best_checkpoints:
-                old_checkpoint = self.best_checkpoints[modality]
-                if os.path.exists(old_checkpoint):
-                    try:
-                        os.remove(old_checkpoint)
-                        print(f"Removed old checkpoint: {old_checkpoint}")
-                    except Exception as e:
-                        print(f"Error removing old checkpoint: {e}")
-            
-            # Save new best checkpoint
-            filename = f"brats_{self.contr}_{(self.step+self.resume_step):06d}_{self.sample_schedule}_{self.diffusion_steps}.pt"
+    def save_regular_checkpoint(self):
+        """Save regular checkpoint for safety (not necessarily best)"""
+        if dist.get_rank() == 0:
+            filename = f"brats_{self.contr}_step_{(self.step+self.resume_step):06d}_{self.sample_schedule}_{self.diffusion_steps}.pt"
             full_save_path = os.path.join(self.checkpoint_dir, filename)
             
             try:
                 with bf.BlobFile(full_save_path, "wb") as f:
                     th.save(self.model.state_dict(), f)
-                
-                self.best_checkpoints[modality] = full_save_path
-                print(f"✅ Saved new best checkpoint: {full_save_path}")
-                
-                # Save best losses to file
-                self._save_best_losses()
-                
-                # Save optimizer state only for current best
-                opt_save_path = os.path.join(self.checkpoint_dir, f"opt_best_{modality}.pt")
-                with bf.BlobFile(opt_save_path, "wb") as f:
-                    th.save(self.opt.state_dict(), f)
-                print(f"💾 Saved optimizer state: {opt_save_path}")
-                
+                print(f"💾 Saved regular checkpoint: {filename}")
             except Exception as e:
-                print(f"❌ Error saving checkpoint: {e}")
-        else:
-            if not is_best:
-                print(f"Loss {current_loss:.6f} not better than best {self.best_losses.get(modality, float('inf')):.6f} for {modality}")
+                print(f"❌ Error saving regular checkpoint: {e}")
 
     def run_step(self, batch, cond, label=None, info=dict()):
         lossmse, sample, sample_idwt = self.forward_backward(batch, cond, label)
 
         if self.use_fp16:
-            self.grad_scaler.unscale_(self.opt)  # check self.grad_scaler._per_optimizer_states
+            self.grad_scaler.unscale_(self.opt)
 
         # compute norms
         with th.no_grad():
@@ -374,7 +530,7 @@ class TrainLoop:
             info['norm/param_max'] = param_max_norm
             info['norm/grad_max'] = grad_max_norm
 
-        if not th.isfinite(lossmse): #infinite
+        if not th.isfinite(lossmse):
             if not th.isfinite(th.tensor(param_max_norm)):
                 logger.log(f"Model parameters contain non-finite value {param_max_norm}, entering breakpoint", level=logger.ERROR)
                 breakpoint()
@@ -383,7 +539,6 @@ class TrainLoop:
                            "\n -> update will be skipped in grad_scaler.step()", level=logger.WARN)
 
         if self.use_fp16:
-            print("Use fp16 ...")
             self.grad_scaler.step(self.opt)
             self.grad_scaler.update()
             info['scale'] = self.grad_scaler.get_scale()
@@ -394,7 +549,7 @@ class TrainLoop:
         return lossmse, sample, sample_idwt
 
     def forward_backward(self, batch, cond, label=None):
-        for p in self.model.parameters():  # Zero out gradient
+        for p in self.model.parameters():
             p.grad = None
 
         if self.mode == 'i2i':
@@ -402,7 +557,6 @@ class TrainLoop:
         else:
             batch_size = batch.shape[0]
 
-        # Sample timesteps
         t, weights = self.schedule_sampler.sample(batch_size, dist_util.dev())
 
         compute_losses = functools.partial(
@@ -421,9 +575,9 @@ class TrainLoop:
             self.schedule_sampler.update_with_local_losses(
                 t, losses1["loss"].detach())
 
-        losses = losses1[0]         # Loss value
-        sample = losses1[1]         # Denoised subbands at t=0
-        sample_idwt = losses1[2]    # Inverse wavelet transformed denoised subbands at t=0
+        losses = losses1[0]
+        sample = losses1[1]
+        sample_idwt = losses1[2]
 
         # Log wavelet level loss
         if self.summary_writer is not None:
@@ -444,14 +598,13 @@ class TrainLoop:
             self.summary_writer.add_scalar('loss/mse_wav_hhh', losses["mse_wav"][7].item(),
                                            global_step=self.step + self.resume_step)
 
-        weights = th.ones(len(losses["mse_wav"])).cuda()  # Equally weight all wavelet channel losses
+        weights = th.ones(len(losses["mse_wav"])).cuda()
 
         loss = (losses["mse_wav"] * weights).mean()
         lossmse = loss.detach()
 
         log_loss_dict(self.diffusion, t, {k: v * weights for k, v in losses.items()})
 
-        # perform some finiteness checks
         if not th.isfinite(loss):
             logger.log(f"Encountered non-finite loss {loss}")
         if self.use_fp16:
@@ -474,44 +627,9 @@ class TrainLoop:
         logger.logkv("samples", (self.step + self.resume_step + 1) * self.global_batch)
 
     def save(self):
-        """Legacy save method - kept for compatibility but prints warning"""
-        print("⚠️  Warning: Using legacy save(). Consider using save_if_best() instead.")
-        def save_checkpoint(rate, state_dict):
-            if dist.get_rank() == 0:
-                logger.log("Saving model...")
-                # Compose filename with modality, iterations, sample method, and timesteps
-                if self.dataset == 'brats':
-                    filename = f"brats_{self.contr}_{(self.step+self.resume_step):06d}_{self.sample_schedule}_{self.diffusion_steps}.pt"
-                elif self.dataset == 'lidc-idri':
-                    filename = f"lidc-idri_{self.contr}_{(self.step+self.resume_step):06d}_{self.sample_schedule}_{self.diffusion_steps}.pt"
-                elif self.dataset == 'brats_inpainting':
-                    filename = f"brats_inpainting_{self.contr}_{(self.step + self.resume_step):06d}_{self.sample_schedule}_{self.diffusion_steps}.pt"
-                elif self.dataset == 'synthrad':
-                    filename = f"synthrad_{self.contr}_{(self.step + self.resume_step):06d}_{self.sample_schedule}_{self.diffusion_steps}.pt"
-                else:
-                    raise ValueError(f'dataset {self.dataset} not implemented')
-
-                # Create checkpoints directory in /data/
-                checkpoint_dir = os.path.join(get_blob_logdir(), 'checkpoints')
-                os.makedirs(checkpoint_dir, exist_ok=True)
-                
-                full_save_path = os.path.join(checkpoint_dir, filename)
-                logger.log(f"Saving model to: {full_save_path}")
-                print(f"Saving model to: {full_save_path}")
-
-                with bf.BlobFile(full_save_path, "wb") as f:
-                    th.save(state_dict, f)
-
-        save_checkpoint(0, self.model.state_dict())
-
-        if dist.get_rank() == 0:
-            checkpoint_dir = os.path.join(get_blob_logdir(), 'checkpoints')
-            os.makedirs(checkpoint_dir, exist_ok=True)
-            opt_save_path = os.path.join(checkpoint_dir, f"opt{(self.step+self.resume_step):06d}.pt")
-            print(f"Saving optimizer to: {opt_save_path}")
-            
-            with bf.BlobFile(opt_save_path, "wb") as f:
-                th.save(self.opt.state_dict(), f)
+        """Legacy save method - prints deprecation warning"""
+        print("⚠️  Warning: Using legacy save(). The enhanced training uses validation-based saving.")
+        self.save_regular_checkpoint()
 
 
 def parse_resume_step_from_filename(filename):
@@ -519,18 +637,16 @@ def parse_resume_step_from_filename(filename):
     Parse filenames of the form path/to/modelNNNNNN.pt, where NNNNNN is the
     checkpoint's number of steps.
     """
-
     split = os.path.basename(filename)
-    split = split.split(".")[-2]  # remove extension
-    split = split.split("_")[-1]  # remove possible underscores, keep only last word
-    # extract trailing number
+    split = split.split(".")[-2]
+    split = split.split("_")[-1]
     reversed_split = []
     for c in reversed(split):
         if not c.isdigit():
             break
         reversed_split.append(c)
     split = ''.join(reversed(reversed_split))
-    split = ''.join(c for c in split if c.isdigit())  # remove non-digits
+    split = ''.join(c for c in split if c.isdigit())
     try:
         return int(split)
     except ValueError:
@@ -541,20 +657,16 @@ def get_blob_logdir():
     """
     Modified to save checkpoints to /data/ directory where persistent volume is mounted
     """
-    # Save to /data/ directory instead of logger.get_dir()
     return "/data"
 
 
 def find_resume_checkpoint():
-    # On your infrastructure, you may want to override this to automatically
-    # discover the latest checkpoint on your blob storage, etc.
     return None
 
 
 def log_loss_dict(diffusion, ts, losses):
     for key, values in losses.items():
         logger.logkv_mean(key, values.mean().item())
-        # Log the quantiles (four quartiles, in particular).
         for sub_t, sub_loss in zip(ts.cpu().numpy(), values.detach().cpu().numpy()):
             quartile = int(4 * sub_t / diffusion.num_timesteps)
             logger.logkv_mean(f"{key}_q{quartile}", sub_loss)

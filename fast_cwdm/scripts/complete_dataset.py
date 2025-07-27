@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 """
-Enhanced medical image synthesis script with SSIM evaluation
-Uses VALIDATED WAVELET-FRIENDLY crop bounds from dataset analysis
-- 42% memory reduction with 100% brain/segmentation preservation
-- DWT-compatible dimensions (160x224x155)
-- Proper preprocessing matching training dataloader
-FIXED: All dimension mismatches and hardcoded assumptions
+Enhanced medical image synthesis script using SHARED synthesis utilities.
+This ensures 100% consistency between training validation and inference.
+Uses VALIDATED WAVELET-FRIENDLY crop bounds from dataset analysis.
 """
 
 import argparse
@@ -28,114 +25,10 @@ from fast_cwdm.guided_diffusion.script_util import (
     args_to_dict
 )
 from fast_cwdm.guided_diffusion.bratsloader import clip_and_normalize
-from fast_cwdm.DWT_IDWT.DWT_IDWT_layer import IDWT_3D, DWT_3D
-from monai.metrics import SSIMMetric, PSNRMetric
-import torch.nn.functional as F
-
-# VALIDATED WAVELET-FRIENDLY CROP BOUNDS from analysis
-CROP_BOUNDS = {
-    'x_min': 39, 'x_max': 199,  # width: 160 (divisible by 16)
-    'y_min': 9, 'y_max': 233,  # height: 224 (divisible by 16)
-    'z_min': 0,  'z_max': 160   # depth: 155 (original)
-}
-
-ORIGINAL_SHAPE = (240, 240, 160)
-CROPPED_SHAPE = (160, 224, 160)
-MODALITIES = ['t1n', 't1c', 't2w', 't2f']
-
-def create_brain_mask_from_target(target, threshold=0.01):
-    """Create brain mask from target image"""
-    if target.dim() > 3:
-        # Remove batch/channel dimensions for mask creation
-        target_for_mask = target.squeeze()
-    else:
-        target_for_mask = target
-    
-    brain_mask = (target_for_mask > threshold).float()
-    
-    # Ensure mask has same dimensions as target
-    while brain_mask.dim() < target.dim():
-        brain_mask = brain_mask.unsqueeze(0)
-    
-    return brain_mask
-
-class ComprehensiveMetrics:
-    """Calculate comprehensive metrics for synthesis evaluation with brain masking"""
-    
-    def __init__(self, device='cuda'):
-        self.device = device
-        self.ssim_metric = SSIMMetric(
-            spatial_dims=3,
-            data_range=1.0,
-            win_size=7,  # Smaller window for medical images
-            k1=0.01,
-            k2=0.03
-        )
-        self.psnr_metric = PSNRMetric(max_val=1.0)
-        
-    def calculate_metrics(self, predicted, target, case_name=""):
-        """Calculate L1, MSE, PSNR, and SSIM metrics with brain masking"""
-        metrics = {}
-        
-        with th.no_grad():
-            # Ensure tensors are on the same device
-            predicted = predicted.to(self.device)
-            target = target.to(self.device)
-            
-            # Add channel dimension if needed
-            if predicted.dim() == 3:  # [H, W, D]
-                predicted = predicted.unsqueeze(0).unsqueeze(0)  # [1, 1, H, W, D]
-            elif predicted.dim() == 4:  # [B, H, W, D] or [1, H, W, D]
-                predicted = predicted.unsqueeze(1)  # [B, 1, H, W, D]
-                
-            if target.dim() == 3:
-                target = target.unsqueeze(0).unsqueeze(0)
-            elif target.dim() == 4:
-                target = target.unsqueeze(1)
-            
-            # 🧠 CREATE BRAIN MASK FROM TARGET (GROUND TRUTH)
-            brain_mask = create_brain_mask_from_target(target, threshold=0.01)
-            
-            # 🧠 APPLY MASK TO BOTH PREDICTED AND TARGET
-            predicted_masked = predicted * brain_mask
-            target_masked = target * brain_mask
-            
-            # Calculate metrics on MASKED images only
-            l1_loss = F.l1_loss(predicted_masked, target_masked).item()
-            mse_loss = F.mse_loss(predicted_masked, target_masked).item()
-            
-            # PSNR on masked images
-            try:
-                psnr_score = self.psnr_metric(y_pred=predicted_masked, y=target_masked).mean().item()
-            except Exception as e:
-                print(f"  Warning: PSNR calculation failed for {case_name}: {e}")
-                psnr_score = 0.0
-            
-            # SSIM on masked images - KEY IMPROVEMENT!
-            try:
-                ssim_score = self.ssim_metric(y_pred=predicted_masked, y=target_masked).mean().item()
-            except Exception as e:
-                print(f"  Warning: SSIM calculation failed for {case_name}: {e}")
-                ssim_score = 0.0
-            
-            # Calculate brain volume for debugging/reporting
-            brain_volume = brain_mask.sum().item()
-            total_volume = brain_mask.numel()
-            brain_ratio = brain_volume / total_volume
-            
-            metrics = {
-                'l1': l1_loss,
-                'mse': mse_loss,
-                'psnr': psnr_score,
-                'ssim': ssim_score,
-                'brain_volume_ratio': brain_ratio
-            }
-            
-            if case_name:
-                print(f"  {case_name}: SSIM={ssim_score:.4f} (brain region = {brain_ratio:.1%})")
-            
-        return metrics
-
+from fast_cwdm.guided_diffusion.synthesis_utils import (
+    ComprehensiveMetrics, synthesize_modality_shared, apply_uncrop_to_original,
+    CROP_BOUNDS, ORIGINAL_SHAPE, CROPPED_SHAPE, MODALITIES
+)
 
 def apply_optimal_crop(img_data):
     """Apply validated wavelet-friendly crop bounds"""
@@ -144,24 +37,6 @@ def apply_optimal_crop(img_data):
         CROP_BOUNDS['y_min']:CROP_BOUNDS['y_max'],
         CROP_BOUNDS['z_min']:CROP_BOUNDS['z_max']
     ]
-
-
-def apply_uncrop(cropped_output):
-    """Uncrop from (160,224,155) back to (240,240,155)"""
-    if isinstance(cropped_output, th.Tensor):
-        uncropped = th.zeros(ORIGINAL_SHAPE, dtype=cropped_output.dtype, device=cropped_output.device)
-    else:
-        uncropped = np.zeros(ORIGINAL_SHAPE, dtype=cropped_output.dtype)
-    
-    # Place cropped output back in original position
-    uncropped[
-        CROP_BOUNDS['x_min']:CROP_BOUNDS['x_max'],
-        CROP_BOUNDS['y_min']:CROP_BOUNDS['y_max'],
-        CROP_BOUNDS['z_min']:CROP_BOUNDS['z_max']
-    ] = cropped_output
-    
-    return uncropped
-
 
 def load_image(file_path):
     """Load and preprocess image EXACTLY like training dataloader with optimal crop."""
@@ -179,15 +54,14 @@ def load_image(file_path):
     print(f"  After optimal crop: {img_cropped.shape}")
     
     # Convert to tensor with proper dimensions for DWT
-    # Shape should be (160, 224, 155) -> ready for DWT
+    # Shape should be (160, 224, 160) -> ready for DWT
     img_tensor = th.tensor(img_cropped).float()
     
-    # Add batch dimension: (1, 160, 224, 155)
+    # Add batch dimension: (1, 160, 224, 160)
     img_tensor = img_tensor.unsqueeze(0)
     
     print(f"  Final tensor shape: {img_tensor.shape}")
     return img_tensor
-
 
 def find_missing_modality(case_dir, evaluation_mode=False, target_modality=None):
     """Find which modality is missing (real) or select one to exclude (evaluation)."""
@@ -209,7 +83,6 @@ def find_missing_modality(case_dir, evaluation_mode=False, target_modality=None)
                 return modality
         return None
 
-
 def check_complete_case(case_dir):
     """Check if case has all 4 modalities (for evaluation mode)."""
     case_name = os.path.basename(case_dir)
@@ -219,7 +92,6 @@ def check_complete_case(case_dir):
         if not os.path.exists(file_path):
             return False
     return True
-
 
 def load_available_modalities(case_dir, missing_modality, evaluation_mode=False):
     """Load all available modalities (excluding the missing/target one)."""
@@ -236,16 +108,28 @@ def load_available_modalities(case_dir, missing_modality, evaluation_mode=False)
     
     return modalities
 
-
 def find_checkpoint(missing_modality, checkpoint_dir):
     """Find the best checkpoint for the missing modality."""
-    # Look for BEST checkpoints first
-    pattern = f"brats_{missing_modality}_*.pt"
+    # Look for BEST validation SSIM checkpoints first
+    pattern = f"brats_{missing_modality}_BEST_val_ssim_*.pt"
     best_files = glob.glob(os.path.join(checkpoint_dir, pattern))
     
     if best_files:
+        # Sort by SSIM score (higher is better)
+        def get_ssim_score(filename):
+            try:
+                parts = os.path.basename(filename).split('_')
+                for i, part in enumerate(parts):
+                    if part == "ssim" and i + 1 < len(parts):
+                        return float(parts[i + 1])
+            except (ValueError, IndexError):
+                pass
+            return 0.0
+        
+        best_files.sort(key=get_ssim_score, reverse=True)
         checkpoint = best_files[0]
-        print(f"Found checkpoint: {checkpoint}")
+        ssim_score = get_ssim_score(checkpoint)
+        print(f"Found BEST validation checkpoint: {checkpoint} (SSIM: {ssim_score:.4f})")
         return checkpoint
     
     # Fallback to regular checkpoints
@@ -265,12 +149,11 @@ def find_checkpoint(missing_modality, checkpoint_dir):
     
     regular_files.sort(key=get_iteration, reverse=True)
     checkpoint = regular_files[0]
-    print(f"Found checkpoint: {checkpoint}")
+    print(f"Found regular checkpoint: {checkpoint}")
     return checkpoint
 
-
 def parse_checkpoint_info(checkpoint_path):
-    """Parse checkpoint filename to get training parameters - FIXED VERSION."""
+    """Parse checkpoint filename to get training parameters - ENHANCED VERSION."""
     basename = os.path.basename(checkpoint_path)
     
     # Default values
@@ -279,41 +162,30 @@ def parse_checkpoint_info(checkpoint_path):
     
     print(f"Parsing checkpoint: {basename}")
     
-    # Handle different checkpoint naming patterns
-    
-    # Pattern 1: brats_t1n_BEST100epoch_sampled_10.pt
-    if "_BEST100epoch_" in basename:
+    # Pattern 1: BEST validation checkpoints
+    if "_BEST_val_ssim_" in basename:
         parts = basename.split('_')
-        if len(parts) >= 4:
-            sample_schedule = parts[3]
-        if len(parts) >= 5:
-            try:
-                diffusion_steps = int(parts[4].split('.')[0])
-            except ValueError:
-                pass
+        # Look for sample schedule and steps in the filename
+        for i, part in enumerate(parts):
+            if part in ["direct", "sampled"]:
+                sample_schedule = part
+            elif part.isdigit() and len(part) >= 2:
+                diffusion_steps = int(part)
     
-    # Pattern 2: brats_t1c_074500_sampled_100.pt (YOUR FORMAT)
+    # Pattern 2: Regular checkpoints
     elif "_sampled_" in basename:
         parts = basename.split('_')
         for i, part in enumerate(parts):
             if part == "sampled" and i + 1 < len(parts):
                 try:
                     diffusion_steps = int(parts[i + 1].split('.')[0])
-                    sample_schedule = "sampled"  # Fixed: should be "sampled" not "direct"
+                    sample_schedule = "sampled"
                     break
                 except ValueError:
                     pass
     
-    # Pattern 3: Look for any number after "sampled" using regex
-    else:
-        match = re.search(r'sampled[_-](\d+)', basename)
-        if match:
-            diffusion_steps = int(match.group(1))
-            sample_schedule = "sampled"  # Fixed: should be "sampled"
-    
     print(f"✅ Checkpoint config: schedule={sample_schedule}, steps={diffusion_steps}")
     return sample_schedule, diffusion_steps
-
 
 def create_model_args(sample_schedule="direct", diffusion_steps=1000):
     """Create model arguments with UPDATED dimensions for optimal crop."""
@@ -323,7 +195,7 @@ def create_model_args(sample_schedule="direct", diffusion_steps=1000):
     args = Args()
     
     # Model architecture - UPDATED for optimal crop dimensions
-    args.image_size = 224  # Height from cropped dimensions (was 224)
+    args.image_size = 224  # Height from cropped dimensions
     args.num_channels = 64
     args.num_res_blocks = 2
     args.channel_mult = "1,2,2,4,4"
@@ -354,8 +226,8 @@ def create_model_args(sample_schedule="direct", diffusion_steps=1000):
     args.rescale_timesteps = False
     args.rescale_learned_sigmas = False
     
-    # Model channels: 8 (target) + 24 (3 modalities * 8 DWT components each)
-    args.in_channels = 32
+    # Model channels: 3 modalities * 8 DWT components each
+    args.in_channels = 24
     args.out_channels = 8
     
     # From checkpoint
@@ -366,52 +238,12 @@ def create_model_args(sample_schedule="direct", diffusion_steps=1000):
     
     return args
 
-
-def prepare_conditioning(available_modalities, missing_modality, device):
-    """Prepare conditioning tensor from available modalities with FIXED dimensions."""
-    dwt = DWT_3D("haar")
-    
-    # Get modalities in consistent order
-    available_order = [m for m in MODALITIES if m != missing_modality]
-    print(f"Available modalities: {available_order}")
-    
-    cond_list = []
-    
-    for modality in available_order:
-        # Get tensor and add channel dimension
-        tensor = available_modalities[modality].to(device)
-        if tensor.dim() == 4:
-            tensor = tensor.unsqueeze(1)  # [B, 1, H, W, D]
-        
-        print(f"  {modality} input shape: {tensor.shape}")
-        
-        # Apply DWT - should work perfectly with (160, 224, 155) dimensions
-        dwt_components = dwt(tensor)
-        shapes = [c.shape for c in dwt_components]
-        print(f"  {modality} DWT shapes: {shapes}")
-        
-        # All components should have consistent dimensions now
-        LLL, LLH, LHL, LHH, HLL, HLH, HHL, HHH = dwt_components
-        
-        # Create DWT conditioning tensor
-        modality_cond = th.cat([
-            LLL / 3.,  # Divide LLL by 3 as per training
-            LLH, LHL, LHH, HLL, HLH, HHL, HHH
-        ], dim=1)
-        
-        print(f"  {modality} final conditioning: {modality_cond.shape}")
-        cond_list.append(modality_cond)
-    
-    # Concatenate all modalities
-    cond = th.cat(cond_list, dim=1)
-    print(f"Final conditioning shape: {cond.shape}")
-    
-    return cond
-
-
-def synthesize_modality(available_modalities, missing_modality, checkpoint_path, device, metrics_calculator=None, target_data=None, override_steps=None):
-    """Synthesize the missing modality with comprehensive metrics."""
-    print(f"\n=== Synthesizing {missing_modality} ===")
+def synthesize_modality(available_modalities, missing_modality, checkpoint_path, device, 
+                       metrics_calculator=None, target_data=None, override_steps=None):
+    """
+    Synthesize using SHARED synthesis utilities - ensures 100% consistency with training validation.
+    """
+    print(f"\n=== Synthesizing {missing_modality} (SHARED PIPELINE) ===")
     
     # Parse checkpoint info
     sample_schedule, diffusion_steps = parse_checkpoint_info(checkpoint_path)
@@ -435,38 +267,19 @@ def synthesize_modality(available_modalities, missing_modality, checkpoint_path,
     model.to(device)
     model.eval()
     
-    # Prepare conditioning
-    cond = prepare_conditioning(available_modalities, missing_modality, device)
-    
-    # Create noise tensor with CORRECT dimensions based on DWT output
-    # Conditioning shape should be [B, 24, D/2, H/2, W/2] for 3 modalities
-    _, _, cond_d, cond_h, cond_w = cond.shape
-    noise_shape = (1, 8, cond_d, cond_h, cond_w)  # Match DWT dimensions
-    noise = th.randn(*noise_shape, device=device)
-    
-    print(f"Noise shape: {noise.shape}")
-    print(f"Conditioning shape: {cond.shape}")
-    
-    # Sample using p_sample_loop_progressive (correct method for Fast-DDPM)
-    print(f"🚀 Running {diffusion.num_timesteps}-step sampling...")
-    
     # Start timing
     sample_start_time = time.time()
     
-    with th.no_grad():
-        final_sample = None
-        for sample_dict in diffusion.p_sample_loop_progressive(
-            model=model,
-            shape=noise.shape,
-            time=diffusion.num_timesteps,  # ✅ Correct parameter for fast sampling
-            noise=noise,
-            cond=cond,
-            clip_denoised=True,
-            model_kwargs={}
-        ):
-            final_sample = sample_dict
-        
-        sample = final_sample["sample"]
+    # Use SHARED synthesis function - guarantees consistency with training validation
+    synthesized, metrics = synthesize_modality_shared(
+        model=model,
+        diffusion=diffusion,
+        available_modalities=available_modalities,
+        missing_modality=missing_modality,
+        device=device,
+        metrics_calculator=metrics_calculator,
+        target_data=target_data
+    )
     
     # End timing
     sample_end_time = time.time()
@@ -474,69 +287,14 @@ def synthesize_modality(available_modalities, missing_modality, checkpoint_path,
     
     print(f"⏱️ Sampling completed in {sample_duration:.2f} seconds ({sample_duration/60:.2f} minutes)")
     
-    # Return timing info along with other data
-    timing_info = {
-        'sample_time': sample_duration,
-        'steps': diffusion.num_timesteps
-    }
-    
-    print(f"Sample shape: {sample.shape}")
-    
-    # Convert back to spatial domain using IDWT
-    idwt = IDWT_3D("haar")
-    B, _, D, H, W = sample.shape
-    
-    spatial_sample = idwt(
-        sample[:, 0, :, :, :].view(B, 1, D, H, W) * 3.,  # Multiply LLL by 3
-        sample[:, 1, :, :, :].view(B, 1, D, H, W),
-        sample[:, 2, :, :, :].view(B, 1, D, H, W),
-        sample[:, 3, :, :, :].view(B, 1, D, H, W),
-        sample[:, 4, :, :, :].view(B, 1, D, H, W),
-        sample[:, 5, :, :, :].view(B, 1, D, H, W),
-        sample[:, 6, :, :, :].view(B, 1, D, H, W),
-        sample[:, 7, :, :, :].view(B, 1, D, H, W)
-    )
-    
-    print(f"Spatial sample shape: {spatial_sample.shape}")
-    
-    # Post-process
-    spatial_sample = th.clamp(spatial_sample, 0, 1)
-    
-    # Apply brain mask from first available modality
-    first_modality = list(available_modalities.values())[0].to(device)
-    if first_modality.dim() == 4:
-        first_modality = first_modality.unsqueeze(1)
-    
-    spatial_sample[first_modality == 0] = 0
-    
-    # Remove batch and channel dimensions
-    if spatial_sample.dim() == 5:
-        spatial_sample = spatial_sample.squeeze(1)  # Remove channel
-    spatial_sample = spatial_sample[0]  # Remove batch
-    
-    print(f"Final output shape: {spatial_sample.shape}")
-    
-    # Calculate comprehensive metrics if target is provided
-    metrics = {}
-    if metrics_calculator is not None and target_data is not None:
-        print(f"🧠 Calculating brain-masked metrics...")
-        metrics = metrics_calculator.calculate_metrics(
-            spatial_sample, target_data, f"{missing_modality}_synthesis"
-        )
-        print(f"  L1: {metrics['l1']:.6f}")
-        print(f"  MSE: {metrics['mse']:.6f}")
-        print(f"  PSNR: {metrics['psnr']:.2f} dB")
-        print(f"  SSIM: {metrics['ssim']:.4f} (brain-masked)")
-        print(f"  Brain volume: {metrics['brain_volume_ratio']:.1%} of total")
-    
     # Add timing info to metrics
     if metrics:
-        metrics.update(timing_info)
+        metrics['sample_time'] = sample_duration
+        metrics['steps'] = diffusion.num_timesteps
     else:
-        metrics = timing_info
+        metrics = {'sample_time': sample_duration, 'steps': diffusion.num_timesteps}
     
-    return spatial_sample, metrics
-
+    return synthesized, metrics
 
 def save_result(synthesized, case_dir, missing_modality, output_dir):
     """Save the synthesized modality with proper uncropping."""
@@ -567,26 +325,25 @@ def save_result(synthesized, case_dir, missing_modality, output_dir):
         synthesized_np = synthesized.detach().cpu().numpy()
         print(f"  Synthesized shape before uncrop: {synthesized_np.shape}")
         
-        # Uncrop from (160, 224, 155) back to (240, 240, 155)
-        uncropped_np = apply_uncrop(synthesized_np)
+        # Uncrop from (160, 224, 160) back to (240, 240, 160)
+        uncropped_np = apply_uncrop_to_original(synthesized_np)
         print(f"  After uncropping: {uncropped_np.shape}")
         
         # Create NIfTI image
         synthesized_img = nib.Nifti1Image(uncropped_np, reference_img.affine, reference_img.header)
     else:
         synthesized_np = synthesized.detach().cpu().numpy()
-        uncropped_np = apply_uncrop(synthesized_np)
+        uncropped_np = apply_uncrop_to_original(synthesized_np)
         synthesized_img = nib.Nifti1Image(uncropped_np, np.eye(4))
     
     nib.save(synthesized_img, output_path)
     print(f"✅ Saved: {output_path}")
 
-
 def process_case(case_dir, output_dir, checkpoint_dir, device, metrics_calculator=None, 
                 evaluation_mode=False, target_modality=None, override_steps=None):
-    """Process a single case with optional metrics evaluation."""
+    """Process a single case using SHARED synthesis pipeline."""
     case_name = os.path.basename(case_dir)
-    print(f"\n=== Processing {case_name} ===")
+    print(f"\n=== Processing {case_name} (SHARED PIPELINE) ===")
     
     # Check if case is complete (for evaluation mode)
     if evaluation_mode and not check_complete_case(case_dir):
@@ -624,7 +381,7 @@ def process_case(case_dir, output_dir, checkpoint_dir, device, metrics_calculato
         # Find checkpoint
         checkpoint_path = find_checkpoint(missing_modality, checkpoint_dir)
         
-        # Synthesize
+        # Synthesize using SHARED function
         synthesized, metrics = synthesize_modality(
             available_modalities, missing_modality, checkpoint_path, device,
             metrics_calculator, target_data, override_steps
@@ -636,7 +393,7 @@ def process_case(case_dir, output_dir, checkpoint_dir, device, metrics_calculato
         else:
             print(f"📊 Evaluation mode: skipping file save for {case_name}")
         
-        print(f"✅ Successfully processed {case_name}")
+        print(f"✅ Successfully processed {case_name} using SHARED synthesis pipeline")
         return True, metrics
         
     except Exception as e:
@@ -645,9 +402,8 @@ def process_case(case_dir, output_dir, checkpoint_dir, device, metrics_calculato
         traceback.print_exc()
         return False, {}
 
-
 def main():
-    parser = argparse.ArgumentParser(description="Enhanced medical image synthesis with VALIDATED crop bounds and brain-masked comprehensive metrics")
+    parser = argparse.ArgumentParser(description="Enhanced medical image synthesis using SHARED synthesis utilities")
     parser.add_argument("--input_dir", default="./datasets/BRATS2023/pseudo_validation")
     parser.add_argument("--output_dir", default="./datasets/BRATS2023/pseudo_validation_completed")
     parser.add_argument("--checkpoint_dir", default="./checkpoints")
@@ -682,7 +438,8 @@ def main():
     if args.diffusion_steps:
         print(f"🎯 Overriding diffusion steps: {args.diffusion_steps}")
     
-    print(f"🧠 Enhanced synthesis with VALIDATED WAVELET-FRIENDLY crop bounds")
+    print(f"  Enhanced synthesis with SHARED SYNTHESIS UTILITIES")
+    print(f"   This ensures 100% consistency between training validation and inference")
     print(f"   Crop bounds: {CROP_BOUNDS}")
     print(f"   Cropped shape: {CROPPED_SHAPE}")
     print(f"   Memory reduction: ~42%")
@@ -718,7 +475,7 @@ def main():
             remaining_cases = len(case_dirs) - i
             eta_seconds = avg_time * remaining_cases
             eta_minutes = eta_seconds / 60
-            print(f"\n📊 Progress: {i}/{len(case_dirs)} | Avg: {avg_time:.1f}s/case | ETA: {eta_minutes:.1f} min")
+            print(f"\nProgress: {i}/{len(case_dirs)} | Avg: {avg_time:.1f}s/case | ETA: {eta_minutes:.1f} min")
         
         success, metrics = process_case(
             case_dir, args.output_dir, args.checkpoint_dir, device,
@@ -730,7 +487,7 @@ def main():
             # Track sample times
             if 'sample_time' in metrics:
                 sample_times.append(metrics['sample_time'])
-                print(f"⏱️ Case sample time: {metrics['sample_time']:.2f}s")
+                print(f"⏱Case sample time: {metrics['sample_time']:.2f}s")
             
             # Collect metrics if available
             if metrics:
@@ -771,8 +528,9 @@ def main():
     
     # Print comprehensive metrics summary
     if args.evaluate_metrics and any(all_metrics.values()):
-        print(f"\n=== 🧠 BRAIN-MASKED COMPREHENSIVE METRICS SUMMARY ===")
+        print(f"\n=== BRAIN-MASKED COMPREHENSIVE METRICS (SHARED PIPELINE) ===")
         print(f"Using VALIDATED WAVELET-FRIENDLY crop bounds with {CROPPED_SHAPE} dimensions")
+        print(f"SHARED synthesis utilities ensure 100% consistency with training validation")
         for modality, metrics_list in all_metrics.items():
             if metrics_list:
                 print(f"\n{modality.upper()} Synthesis:")
@@ -812,10 +570,11 @@ def main():
                 
                 print(f"  Cases: {len(metrics_list)}")
     
-    print(f"\n✅ FAST-CWDM with VALIDATED CROP BOUNDS complete!")
+    print(f"\n FAST-CWDM with SHARED SYNTHESIS UTILITIES complete!")
+    print(f"   100% consistency between training validation and inference")
     print(f"   Memory efficiency: ~42% reduction")
     print(f"   Brain preservation: 100% validated")
-    print(f"   DWT compatibility: Perfect (160x224x155)")
+    print(f"   DWT compatibility: Perfect (160x224x160)")
 
 
 if __name__ == "__main__":

@@ -1,9 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: multitask-brats-job
-  labels:
-    app: multitask-brats
+  name: 4-tr-multitask-t2f
 spec:
   backoffLimit: 0
   template:
@@ -60,7 +58,7 @@ spec:
             - |
               sudo mkdir /data/multitask_models/
               sudo chmod 777 /data/multitask_models/
-              git clone https://github.com/tsereda/UNETR-BraTS-Synthesis.git ${REPO_PATH}
+              git clone -b bettervalidation https://github.com/tsereda/brats-synthesis.git ${REPO_PATH}
               cd ${REPO_PATH}
               
               sudo apt-get update && sudo apt-get install -y p7zip-full wget git
@@ -79,14 +77,9 @@ spec:
               python -c "import torch; print(f'GPUs available: {torch.cuda.device_count()}')"
               
               pip install "numpy<2.0" torch nibabel matplotlib monai[all]
-
-              python multitask.py --batch_size 1 --max_epoch 2 --target_modality all
-
-              # Uncomment to run inference after training
-              # python inferenceseg.py \
-              #   --model_path best_model_batchsize4_epoch100_128.pt \
-              #   --subset 5 \
-              #   --output_dir .
+  
+              #choose from 'FLAIR', 'T1CE', 'T1', 'T2', 'all'
+              python multi-task/train.py --batch_size 1 --max_epoch 2 --target_modality FLAIR
 
               echo "Job completed successfully!"
           
@@ -114,7 +107,7 @@ spec:
             sizeLimit: 50Gi
         - name: data
           persistentVolumeClaim:
-            claimName: brats2025-5
+            claimName: brats2025-4
         - name: shm
           emptyDir:
             medium: Memory

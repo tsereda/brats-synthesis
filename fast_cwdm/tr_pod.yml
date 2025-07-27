@@ -119,6 +119,7 @@ spec:
             
             mv datasets/ fast_cwdm/
             cd fast_cwdm
+            python debug_validation.py
             rm -rf datasets/BRATS2023/training/BraTS-MET-00232-000/
             #python scripts/check_data_integrity.py --data_dir datasets/BRATS2023/training
             # Option 1: Change to fast_cwdm directory first (recommended)

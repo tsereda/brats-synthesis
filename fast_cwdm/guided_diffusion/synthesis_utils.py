@@ -150,85 +150,243 @@ def prepare_conditioning(available_modalities, missing_modality, device):
 def synthesize_modality_shared(model, diffusion, available_modalities, missing_modality, device, 
                               metrics_calculator=None, target_data=None):
     """
-    FIXED: Proper channel concatenation for validation synthesis
+    ENHANCED: Synthesis with comprehensive error checking and debugging
     """
-    print(f"\n=== Synthesizing {missing_modality} (FIXED PIPELINE) ===")
+    print(f"\n=== Synthesizing {missing_modality} (ENHANCED DEBUG PIPELINE) ===")
     
-    # Prepare conditioning - this should give us 24 channels (3 modalities × 8 each)
-    cond = prepare_conditioning(available_modalities, missing_modality, device)
-    print(f"Conditioning shape: {cond.shape}")  # Should be [1, 24, D, H, W]
-    
-    # Create noise tensor - this should be 8 channels
-    _, _, cond_d, cond_h, cond_w = cond.shape
-    noise_shape = (1, 8, cond_d, cond_h, cond_w)
-    noise = th.randn(*noise_shape, device=device)
-    print(f"Noise shape: {noise.shape}")  # Should be [1, 8, D, H, W]
-    
-    # CRITICAL FIX: Manually concatenate conditioning and noise to get 32 channels
-    # This matches exactly what happens during training in p_mean_variance()
-    combined_input = th.cat([noise, cond], dim=1)  # [1, 32, D, H, W]
-    print(f"Combined input shape: {combined_input.shape}")  # Should be [1, 32, D, H, W]
-    
-    # Use the combined input as the "noise" parameter
-    # The sampling function will treat this as the starting point
-    with th.no_grad():
-        final_sample = None
-        for sample_dict in diffusion.p_sample_loop_progressive(
-            model=model,
-            shape=combined_input.shape,  # Use the 32-channel shape
-            time=diffusion.num_timesteps,
-            noise=combined_input,  # Pass the concatenated tensor
-            clip_denoised=True,
-            model_kwargs={}
-            # Note: No separate 'cond' parameter - it's already in the noise tensor
-        ):
-            final_sample = sample_dict
+    try:
+        # Step 1: Prepare conditioning with detailed checks
+        print("Step 1: Preparing conditioning...")
+        cond = prepare_conditioning_debug(available_modalities, missing_modality, device)
+        print(f"✅ Conditioning shape: {cond.shape}")
+        print(f"   Conditioning device: {cond.device}")
+        print(f"   Conditioning dtype: {cond.dtype}")
+        print(f"   Conditioning range: [{cond.min():.4f}, {cond.max():.4f}]")
         
-        sample = final_sample["sample"]
+        # Step 2: Create noise tensor with validation
+        print("Step 2: Creating noise tensor...")
+        _, _, cond_d, cond_h, cond_w = cond.shape
+        noise_shape = (1, 8, cond_d, cond_h, cond_w)
+        print(f"   Target noise shape: {noise_shape}")
+        
+        noise = th.randn(*noise_shape, device=device, dtype=cond.dtype)
+        print(f"✅ Noise shape: {noise.shape}")
+        print(f"   Noise device: {noise.device}")
+        print(f"   Noise dtype: {noise.dtype}")
+        print(f"   Noise range: [{noise.min():.4f}, {noise.max():.4f}]")
+        
+        # Step 3: Combine conditioning and noise
+        print("Step 3: Combining input tensors...")
+        print(f"   Before concat - Noise: {noise.shape}, Cond: {cond.shape}")
+        
+        # Check device consistency
+        if noise.device != cond.device:
+            print(f"   ⚠️  Device mismatch detected! Moving noise to {cond.device}")
+            noise = noise.to(cond.device)
+        
+        # Check dtype consistency  
+        if noise.dtype != cond.dtype:
+            print(f"   ⚠️  Dtype mismatch detected! Converting noise to {cond.dtype}")
+            noise = noise.to(dtype=cond.dtype)
+        
+        combined_input = th.cat([noise, cond], dim=1)
+        print(f"✅ Combined input shape: {combined_input.shape}")
+        print(f"   Expected: [1, 32, {cond_d}, {cond_h}, {cond_w}]")
+        
+        if combined_input.shape[1] != 32:
+            raise ValueError(f"Expected 32 channels, got {combined_input.shape[1]}. "
+                           f"Noise: {noise.shape[1]}, Cond: {cond.shape[1]}")
+        
+        # Step 4: Run diffusion sampling with monitoring
+        print("Step 4: Running diffusion sampling...")
+        print(f"   Model mode: {getattr(diffusion, 'mode', 'default')}")
+        print(f"   Timesteps: {diffusion.num_timesteps}")
+        
+        model.eval()
+        
+        with th.no_grad():
+            final_sample = None
+            step_count = 0
+            
+            try:
+                for sample_dict in diffusion.p_sample_loop_progressive(
+                    model=model,
+                    shape=combined_input.shape,
+                    time=diffusion.num_timesteps,
+                    noise=combined_input,
+                    clip_denoised=True,
+                    model_kwargs={}
+                ):
+                    final_sample = sample_dict
+                    step_count += 1
+                    
+                    # Progress monitoring (every 10 steps)
+                    if step_count % 10 == 0 or step_count == 1:
+                        print(f"   Sampling step {step_count}/{diffusion.num_timesteps}")
+                
+                print(f"✅ Sampling completed in {step_count} steps")
+                
+            except Exception as sampling_error:
+                print(f"❌ Sampling failed at step {step_count}:")
+                print(f"   Error: {str(sampling_error)}")
+                raise sampling_error
+            
+            if final_sample is None:
+                raise ValueError("Sampling returned None - no samples generated")
+            
+            sample = final_sample["sample"]
+            print(f"✅ Raw sample shape: {sample.shape}")
+        
+        # Step 5: Extract wavelet components
+        print("Step 5: Extracting wavelet components...")
+        sample_dwt = sample[:, :8, :, :, :]  # Take only first 8 channels
+        print(f"✅ DWT sample shape: {sample_dwt.shape}")
+        print(f"   Sample range: [{sample_dwt.min():.4f}, {sample_dwt.max():.4f}]")
+        
+        # Step 6: Convert back to spatial domain
+        print("Step 6: Converting to spatial domain...")
+        idwt = IDWT_3D("haar")
+        
+        B, _, D, H, W = sample_dwt.shape
+        print(f"   IDWT input dims: B={B}, D={D}, H={H}, W={W}")
+        
+        try:
+            spatial_sample = idwt(
+                sample_dwt[:, 0, :, :, :].view(B, 1, D, H, W) * 3.,
+                sample_dwt[:, 1, :, :, :].view(B, 1, D, H, W),
+                sample_dwt[:, 2, :, :, :].view(B, 1, D, H, W),
+                sample_dwt[:, 3, :, :, :].view(B, 1, D, H, W),
+                sample_dwt[:, 4, :, :, :].view(B, 1, D, H, W),
+                sample_dwt[:, 5, :, :, :].view(B, 1, D, H, W),
+                sample_dwt[:, 6, :, :, :].view(B, 1, D, H, W),
+                sample_dwt[:, 7, :, :, :].view(B, 1, D, H, W)
+            )
+            print(f"✅ IDWT completed. Spatial shape: {spatial_sample.shape}")
+            
+        except Exception as idwt_error:
+            print(f"❌ IDWT failed:")
+            print(f"   Error: {str(idwt_error)}")
+            print(f"   Input shapes for IDWT:")
+            for i in range(8):
+                component = sample_dwt[:, i, :, :, :].view(B, 1, D, H, W)
+                print(f"     Component {i}: {component.shape}")
+            raise idwt_error
+        
+        # Step 7: Post-processing
+        print("Step 7: Post-processing...")
+        spatial_sample = th.clamp(spatial_sample, 0, 1)
+        print(f"   After clamping range: [{spatial_sample.min():.4f}, {spatial_sample.max():.4f}]")
+        
+        # Apply brain mask from first available modality
+        first_modality = list(available_modalities.values())[0].to(device)
+        if first_modality.dim() == 4:
+            first_modality = first_modality.unsqueeze(1)
+        
+        print(f"   Brain mask shape: {first_modality.shape}")
+        print(f"   Brain mask device: {first_modality.device}")
+        
+        # Apply mask
+        brain_voxels_before = (spatial_sample > 0).sum().item()
+        spatial_sample[first_modality == 0] = 0
+        brain_voxels_after = (spatial_sample > 0).sum().item()
+        print(f"   Brain voxels: {brain_voxels_before} -> {brain_voxels_after}")
+        
+        # Remove batch and channel dimensions
+        if spatial_sample.dim() == 5:
+            spatial_sample = spatial_sample.squeeze(1)
+        spatial_sample = spatial_sample[0]
+        
+        print(f"✅ Final output shape: {spatial_sample.shape}")
+        
+        # Step 8: Calculate metrics if provided
+        metrics = {}
+        if metrics_calculator is not None and target_data is not None:
+            print("Step 8: Calculating metrics...")
+            try:
+                metrics = metrics_calculator.calculate_metrics(
+                    spatial_sample, target_data, f"{missing_modality}_synthesis"
+                )
+                print(f"✅ Metrics calculated: {list(metrics.keys())}")
+                if 'ssim' in metrics:
+                    print(f"   SSIM: {metrics['ssim']:.4f}")
+                    
+            except Exception as metrics_error:
+                print(f"❌ Metrics calculation failed: {str(metrics_error)}")
+                # Don't fail the whole process for metrics errors
+                metrics = {}
+        
+        print(f"✅ Synthesis completed successfully for {missing_modality}")
+        return spatial_sample, metrics
+        
+    except Exception as e:
+        print(f"❌ CRITICAL ERROR in synthesis pipeline:")
+        print(f"   Error type: {type(e).__name__}")
+        print(f"   Error message: {str(e)}")
+        import traceback
+        print("   Full traceback:")
+        traceback.print_exc()
+        raise e
+
+
+def prepare_conditioning_debug(available_modalities, missing_modality, device):
+    """Enhanced conditioning preparation with debugging"""
+    dwt = DWT_3D("haar")
     
-    # Extract only the first 8 channels (the synthesized DWT components)
-    # The conditioning channels will also be in the output, but we only want the first 8
-    sample = sample[:, :8, :, :, :]  # Take only first 8 channels
-    print(f"Sample shape after extraction: {sample.shape}")
+    # Get modalities in consistent order
+    available_order = [m for m in MODALITIES if m != missing_modality]
+    print(f"   Processing modalities in order: {available_order}")
     
-    # Convert back to spatial domain using IDWT
-    idwt = IDWT_3D("haar")
-    B, _, D, H, W = sample.shape
+    cond_list = []
     
-    spatial_sample = idwt(
-        sample[:, 0, :, :, :].view(B, 1, D, H, W) * 3.,
-        sample[:, 1, :, :, :].view(B, 1, D, H, W),
-        sample[:, 2, :, :, :].view(B, 1, D, H, W),
-        sample[:, 3, :, :, :].view(B, 1, D, H, W),
-        sample[:, 4, :, :, :].view(B, 1, D, H, W),
-        sample[:, 5, :, :, :].view(B, 1, D, H, W),
-        sample[:, 6, :, :, :].view(B, 1, D, H, W),
-        sample[:, 7, :, :, :].view(B, 1, D, H, W)
-    )
+    for i, modality in enumerate(available_order):
+        print(f"   Processing modality {i+1}/3: {modality}")
+        
+        # Get tensor and validate
+        tensor = available_modalities[modality].to(device)
+        print(f"     Input shape: {tensor.shape}")
+        print(f"     Input device: {tensor.device}")
+        print(f"     Input range: [{tensor.min():.4f}, {tensor.max():.4f}]")
+        
+        if tensor.dim() == 4:
+            tensor = tensor.unsqueeze(1)  # [B, 1, H, W, D]
+            print(f"     After unsqueeze: {tensor.shape}")
+        
+        # Apply DWT with error checking
+        try:
+            dwt_components = dwt(tensor)
+            LLL, LLH, LHL, LHH, HLL, HLH, HHL, HHH = dwt_components
+            
+            print(f"     DWT components shapes:")
+            print(f"       LLL: {LLL.shape}")
+            print(f"       Others: {LLH.shape} (assuming all same)")
+            
+            # Create DWT conditioning tensor
+            modality_cond = th.cat([
+                LLL / 3.,  # Divide LLL by 3 as per training
+                LLH, LHL, LHH, HLL, HLH, HHL, HHH
+            ], dim=1)
+            
+            print(f"     Modality cond shape: {modality_cond.shape}")
+            cond_list.append(modality_cond)
+            
+        except Exception as dwt_error:
+            print(f"     ❌ DWT failed for {modality}: {str(dwt_error)}")
+            raise dwt_error
     
-    # Post-process
-    spatial_sample = th.clamp(spatial_sample, 0, 1)
+    # Concatenate all modalities
+    print(f"   Concatenating {len(cond_list)} modality conditions...")
+    for i, cond in enumerate(cond_list):
+        print(f"     Condition {i}: {cond.shape}")
     
-    # Apply brain mask from first available modality
-    first_modality = list(available_modalities.values())[0].to(device)
-    if first_modality.dim() == 4:
-        first_modality = first_modality.unsqueeze(1)
+    cond = th.cat(cond_list, dim=1)
+    print(f"   Final conditioning shape: {cond.shape}")
     
-    spatial_sample[first_modality == 0] = 0
+    # Validate expected shape
+    expected_channels = len(available_order) * 8  # Should be 24 for 3 modalities
+    if cond.shape[1] != expected_channels:
+        raise ValueError(f"Expected {expected_channels} conditioning channels, got {cond.shape[1]}")
     
-    # Remove batch and channel dimensions
-    if spatial_sample.dim() == 5:
-        spatial_sample = spatial_sample.squeeze(1)
-    spatial_sample = spatial_sample[0]
-    
-    # Calculate metrics if provided
-    metrics = {}
-    if metrics_calculator is not None and target_data is not None:
-        metrics = metrics_calculator.calculate_metrics(
-            spatial_sample, target_data, f"{missing_modality}_synthesis"
-        )
-    
-    return spatial_sample, metrics
+    return cond
 
 def apply_uncrop_to_original(cropped_output):
     """Uncrop from (160,224,160) back to (240,240,160)"""

@@ -106,6 +106,7 @@ spec:
               #python scripts/check_data_integrity.py --data_dir datasets/BRATS2023/training
               # Option 1: Change to fast_cwdm directory first (recommended)
               cd fast_cwdm
+              python debug_validation.py
               bash run.sh --sampling-strategy sampled --timesteps 100 --mode train --train_modality t1c #"t1n" "t1c" "t2w" "t2f"
               ls -la /data/checkpoints/
 

@@ -689,7 +689,9 @@ def multitask_val_epoch(model, loader, epoch, max_epochs, target_modality, logge
                     sigma_scale=0.125,
                     padding_mode="constant",
                     cval=0.0,
+                # Debug: Print unique values in raw target_segmentation before any processing
                 )
+                print(f"[VAL DEBUG] Batch {idx}: target_segmentation unique values BEFORE any processing: {torch.unique(target_segmentation)}")
 
                 # Correct output channel indexing
                 pred_synthesis = predicted[:, 0:1, ...]  # First channel

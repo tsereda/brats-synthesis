@@ -27,15 +27,15 @@ from DWT_IDWT.DWT_IDWT_layer import IDWT_3D, DWT_3D
 CROP_BOUNDS = {
     'x_min': 39, 'x_max': 199,  # width: 160 (divisible by 16)
     'y_min': 17, 'y_max': 225,  # height: 208 (divisible by 16)
-    'z_min': 0,  'z_max': 155   # depth: 155 (original)
+    'z_min': 0,  'z_max': 152   # depth: 155 (original)
 }
 
 def apply_uncrop_to_original(cropped_output):
     """Uncrop from (160,208,155) back to (240,240,155)"""
     if isinstance(cropped_output, th.Tensor):
-        uncropped = th.zeros((240, 240, 155), dtype=cropped_output.dtype, device=cropped_output.device)
+        uncropped = th.zeros((240, 240, 152), dtype=cropped_output.dtype, device=cropped_output.device)
     else:
-        uncropped = np.zeros((240, 240, 155), dtype=cropped_output.dtype)
+        uncropped = np.zeros((240, 240, 152), dtype=cropped_output.dtype)
     
     # Place cropped output back in original position
     uncropped[

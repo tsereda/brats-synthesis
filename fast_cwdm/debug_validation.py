@@ -25,7 +25,7 @@ def test_dataset_loading():
     
     try:
         # Test dataset loading
-        data_dir = "./fast_cwdm/datasets/BRATS2023/training"  # Adjust path as needed
+        data_dir = "datasets/BRATS2023/training"  # Adjust path as needed
         ds = BRATSVolumes(data_dir, mode='train', split='val', val_split_ratio=0.2)
         
         print(f"✅ Dataset loaded successfully")

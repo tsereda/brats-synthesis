@@ -26,12 +26,12 @@ from DWT_IDWT.DWT_IDWT_layer import IDWT_3D, DWT_3D
 # VALIDATED WAVELET-FRIENDLY CROP BOUNDS from analysis
 CROP_BOUNDS = {
     'x_min': 39, 'x_max': 199,  # width: 160 (divisible by 16)
-    'y_min': 17, 'y_max': 225,  # height: 208 (divisible by 16)
+    'y_min': 9, 'y_max': 233,  # height: 224 (divisible by 16)
     'z_min': 0,  'z_max': 160   # depth: 155 (original)
 }
 
 def apply_uncrop_to_original(cropped_output):
-    """Uncrop from (160,208,155) back to (240,240,155)"""
+    """Uncrop from (160,224,155) back to (240,240,155)"""
     if isinstance(cropped_output, th.Tensor):
         uncropped = th.zeros((240, 240, 160), dtype=cropped_output.dtype, device=cropped_output.device)
     else:
@@ -178,7 +178,7 @@ def main():
         print(f"Final target shape: {target.shape}")
 
         # FIXED: No more hardcoded padding/cropping - dimensions should already be correct
-        # The sample and target should already be in (160, 208, 155) format
+        # The sample and target should already be in (160, 224, 155) format
 
         pathlib.Path(args.output_dir).mkdir(parents=True, exist_ok=True)
         pathlib.Path(os.path.join(args.output_dir, subj)).mkdir(parents=True, exist_ok=True)
@@ -227,7 +227,7 @@ def create_argparser():
         output_dir='./results',
         mode='default',
         renormalize=False,
-        image_size=208,  # UPDATED: Height from validated crop (was 256)
+        image_size=224,  # UPDATED: Height from validated crop (was 256)
         half_res_crop=False,
         concat_coords=False, # if true, add 3 (for 3d) or 2 (for 2d) to in_channels
         contr="",

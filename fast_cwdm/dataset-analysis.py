@@ -5,7 +5,7 @@ Identifies consistent brain regions across all cases for efficient cropping
 Includes comprehensive validation to ensure no brain tissue loss
 NOW WITH WAVELET-FRIENDLY DIMENSION CONSTRAINTS for Fast-CWDM
 
-# NOTE: The validated crop bounds (160x208x160, x:39-199, y:17-225, z:0-160) are used everywhere in the codebase for loader, training, and conversion.
+# NOTE: The validated crop bounds (160x224x160, x:39-199, y:17-225, z:0-160) are used everywhere in the codebase for loader, training, and conversion.
 """
 
 import os

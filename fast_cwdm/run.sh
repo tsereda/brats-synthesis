@@ -62,7 +62,7 @@ fi
 # Print validated crop bounds info (used everywhere)
 echo "🔧 USING VALIDATED DWT-FRIENDLY CROP BOUNDS (used everywhere)"
 echo "   Crop bounds: (39:199, 17:225, 0:160)"
-echo "   Output dims: 160x208x160 (42% memory reduction)"
+echo "   Output dims: 160x224x160 (42% memory reduction)"
 echo "   DWT dims: 80x104x76 (perfect wavelet compatibility)"
 echo "   Brain preservation: 100% validated"
 
@@ -72,7 +72,7 @@ if [[ $MODEL == 'unet' ]]; then
   CHANNEL_MULT=1,2,2,4,4;
   ADDITIVE_SKIP=False;      # Set True to save memory
   BATCH_SIZE=2;
-  IMAGE_SIZE=208;           # Height from validated crop (was 224)
+  IMAGE_SIZE=224;           # Height from validated crop (was 224)
   IN_CHANNELS=32;           # 8 (target) + 24 (3 modalities * 8 DWT components each)
   NOISE_SCHED='linear';
   # Set sample schedule explicitly - now using command line args with defaults
@@ -229,4 +229,4 @@ echo "🎯 VALIDATED CROP BOUNDS IMPLEMENTATION COMPLETE"
 echo "   Memory efficiency: ~42% reduction"
 echo "   Brain preservation: 100% validated"
 echo "   DWT compatibility: Perfect"
-echo "   Dimensions: 160x208x155 → 80x104x77 (DWT)"
+echo "   Dimensions: 160x224x155 → 80x104x77 (DWT)"

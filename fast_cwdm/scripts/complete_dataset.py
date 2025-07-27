@@ -3,7 +3,7 @@
 Enhanced medical image synthesis script with SSIM evaluation
 Uses VALIDATED WAVELET-FRIENDLY crop bounds from dataset analysis
 - 42% memory reduction with 100% brain/segmentation preservation
-- DWT-compatible dimensions (160x208x155)
+- DWT-compatible dimensions (160x224x155)
 - Proper preprocessing matching training dataloader
 FIXED: All dimension mismatches and hardcoded assumptions
 """
@@ -35,12 +35,12 @@ import torch.nn.functional as F
 # VALIDATED WAVELET-FRIENDLY CROP BOUNDS from analysis
 CROP_BOUNDS = {
     'x_min': 39, 'x_max': 199,  # width: 160 (divisible by 16)
-    'y_min': 17, 'y_max': 225,  # height: 208 (divisible by 16)
+    'y_min': 9, 'y_max': 233,  # height: 224 (divisible by 16)
     'z_min': 0,  'z_max': 160   # depth: 155 (original)
 }
 
 ORIGINAL_SHAPE = (240, 240, 160)
-CROPPED_SHAPE = (160, 208, 160)
+CROPPED_SHAPE = (160, 224, 160)
 MODALITIES = ['t1n', 't1c', 't2w', 't2f']
 
 def create_brain_mask_from_target(target, threshold=0.01):
@@ -147,7 +147,7 @@ def apply_optimal_crop(img_data):
 
 
 def apply_uncrop(cropped_output):
-    """Uncrop from (160,208,155) back to (240,240,155)"""
+    """Uncrop from (160,224,155) back to (240,240,155)"""
     if isinstance(cropped_output, th.Tensor):
         uncropped = th.zeros(ORIGINAL_SHAPE, dtype=cropped_output.dtype, device=cropped_output.device)
     else:
@@ -179,10 +179,10 @@ def load_image(file_path):
     print(f"  After optimal crop: {img_cropped.shape}")
     
     # Convert to tensor with proper dimensions for DWT
-    # Shape should be (160, 208, 155) -> ready for DWT
+    # Shape should be (160, 224, 155) -> ready for DWT
     img_tensor = th.tensor(img_cropped).float()
     
-    # Add batch dimension: (1, 160, 208, 155)
+    # Add batch dimension: (1, 160, 224, 155)
     img_tensor = img_tensor.unsqueeze(0)
     
     print(f"  Final tensor shape: {img_tensor.shape}")
@@ -323,7 +323,7 @@ def create_model_args(sample_schedule="direct", diffusion_steps=1000):
     args = Args()
     
     # Model architecture - UPDATED for optimal crop dimensions
-    args.image_size = 208  # Height from cropped dimensions (was 224)
+    args.image_size = 224  # Height from cropped dimensions (was 224)
     args.num_channels = 64
     args.num_res_blocks = 2
     args.channel_mult = "1,2,2,4,4"
@@ -385,7 +385,7 @@ def prepare_conditioning(available_modalities, missing_modality, device):
         
         print(f"  {modality} input shape: {tensor.shape}")
         
-        # Apply DWT - should work perfectly with (160, 208, 155) dimensions
+        # Apply DWT - should work perfectly with (160, 224, 155) dimensions
         dwt_components = dwt(tensor)
         shapes = [c.shape for c in dwt_components]
         print(f"  {modality} DWT shapes: {shapes}")
@@ -567,7 +567,7 @@ def save_result(synthesized, case_dir, missing_modality, output_dir):
         synthesized_np = synthesized.detach().cpu().numpy()
         print(f"  Synthesized shape before uncrop: {synthesized_np.shape}")
         
-        # Uncrop from (160, 208, 155) back to (240, 240, 155)
+        # Uncrop from (160, 224, 155) back to (240, 240, 155)
         uncropped_np = apply_uncrop(synthesized_np)
         print(f"  After uncropping: {uncropped_np.shape}")
         
@@ -815,7 +815,7 @@ def main():
     print(f"\n✅ FAST-CWDM with VALIDATED CROP BOUNDS complete!")
     print(f"   Memory efficiency: ~42% reduction")
     print(f"   Brain preservation: 100% validated")
-    print(f"   DWT compatibility: Perfect (160x208x155)")
+    print(f"   DWT compatibility: Perfect (160x224x155)")
 
 
 if __name__ == "__main__":

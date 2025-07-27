@@ -42,7 +42,7 @@
     ],
     "cropped_shape": [
       160,
-      208,
+      224,
       155
     ],
     "original_volume": 8928000,
@@ -238,7 +238,7 @@
             "x_min": 55,
             "x_max": 182,
             "y_min": 38,
-            "y_max": 208,
+            "y_max": 224,
             "z_min": 7,
             "z_max": 134
           },

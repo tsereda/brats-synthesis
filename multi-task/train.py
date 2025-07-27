@@ -587,24 +587,24 @@ def multitask_train_epoch(model, loader, optimizer, epoch, loss_func, max_epochs
             input_data = batch_data["input_image"].cuda()
             target_synthesis = batch_data["target_synthesis"].cuda()
             target_segmentation = batch_data["target_segmentation"].cuda()
-            
+
             optimizer.zero_grad()
             predicted = model(input_data)
             total_loss, loss_components = loss_func(predicted, target_synthesis, target_segmentation)
             total_loss.backward()
             optimizer.step()
-            
+
             # Update metrics
             run_total_loss.update(loss_components["total"], n=input_data.shape[0])
             run_synth_loss.update(loss_components["synthesis"], n=input_data.shape[0])
             run_seg_loss.update(loss_components["segmentation"], n=input_data.shape[0])
-            
+
             # Log metrics
             logger.log_training_metrics(
-                epoch, idx, len(loader), loss_components, 
+                epoch, idx, len(loader), loss_components,
                 optimizer.param_groups[0]['lr']
             )
-            
+
             # Log samples
             if epoch < 5:
                 sample_freq = 15
@@ -612,18 +612,24 @@ def multitask_train_epoch(model, loader, optimizer, epoch, loss_func, max_epochs
                 sample_freq = 30
             else:
                 sample_freq = 50
-                
+
             if (idx + 1) % sample_freq == 0:
                 logger.log_training_samples(
-                    model, input_data, target_synthesis, target_segmentation, 
+                    model, input_data, target_synthesis, target_segmentation,
                     batch_data, epoch, idx
                 )
-            
+
             # Progress print
             if (idx + 1) % 20 == 0:
                 print(f"Epoch {epoch+1}/{max_epochs} [{idx+1}/{len(loader)}] "
                       f"Total: {run_total_loss.avg:.4f} Synth: {run_synth_loss.avg:.4f} Seg: {run_seg_loss.avg:.4f}")
-                
+
+        except RuntimeError as e:
+            if "zlib.error" in str(e) or "decompressing data" in str(e):
+                print(f"Skipping corrupted batch {idx} due to data corruption: {e}")
+                continue
+            else:
+                raise e  # Re-raise other errors
         except Exception as e:
             print(f"Error in training step {idx}: {e}")
             continue

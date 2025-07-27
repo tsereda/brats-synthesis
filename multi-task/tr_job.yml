@@ -19,9 +19,9 @@ spec:
           
           env:
             - name: REPO_PATH
-              value: /app/UNETR-BraTS-Synthesis
+              value: /app/brats-synthesis
             - name: PYTHONPATH
-              value: /app/UNETR-BraTS-Synthesis
+              value: /app/brats-synthesis
             - name: CUDA_VISIBLE_DEVICES
               value: "0"
             # nnUNet paths
@@ -47,11 +47,6 @@ spec:
               value: "timgsereda"
             - name: WANDB_MODE
               value: "online"
-            - name: SYNAPSE_AUTHTOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: synapse-credentials
-                  key: authtoken
           
           command: ["/bin/bash", "-c"]
           args:

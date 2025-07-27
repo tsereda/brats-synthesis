@@ -793,6 +793,26 @@ class UNetModel(nn.Module):
             if self.additive_skips:
                 h = (h + new_hs) / 2
             else:
+-                # Robust padding to fix dimension mismatches before concatenation
+                if h.shape[2:] != new_hs.shape[2:]:
+                    print(f"[UNET FIX] Dimension mismatch: h={h.shape[2:]} vs new_hs={new_hs.shape[2:]}")
+                    # Pad both to MAXIMUM dimensions (no data loss!)
+                    max_dims = [max(h.shape[i], new_hs.shape[i]) for i in range(2, len(h.shape))]
+                    # Pad h if needed
+                    if h.shape[2:] != tuple(max_dims):
+                        padding = []
+                        for i in range(len(max_dims)-1, -1, -1):  # F.pad expects reverse order
+                            diff = max_dims[i] - h.shape[i+2]
+                            padding.extend([0, diff])
+                        h = F.pad(h, padding)
+                    # Pad new_hs if needed  
+                    if new_hs.shape[2:] != tuple(max_dims):
+                        padding = []
+                        for i in range(len(max_dims)-1, -1, -1):
+                            diff = max_dims[i] - new_hs.shape[i+2]
+                            padding.extend([0, diff])
+                        new_hs = F.pad(new_hs, padding)
+                    print(f"[UNET FIX] Padded to: {max_dims}")
                 h = th.cat([h, new_hs], dim=1)
 
             h = module(h, emb)

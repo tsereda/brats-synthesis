@@ -186,8 +186,8 @@ def synthesize_modality_shared(model, diffusion, available_modalities, missing_m
         print(f"   Timesteps: {getattr(diffusion, 'num_timesteps', 'unknown')}")
         # Add shape check callback for model input/output
         def model_with_shape_check(x, t, **kwargs):
-            # Ensure t is a tensor, on correct device, and long dtype
             import torch as th
+            # Ensure t is a tensor, contiguous, on correct device, and long dtype
             if not isinstance(t, th.Tensor):
                 t = th.tensor(t, device=x.device, dtype=th.long)
             else:
@@ -195,8 +195,10 @@ def synthesize_modality_shared(model, diffusion, available_modalities, missing_m
                     t = t.to(x.device)
                 if t.dtype != th.long:
                     t = t.long()
+                if not t.is_contiguous():
+                    t = t.contiguous()
             print(f"   [DEBUG] Model input shape: {x.shape}")
-            print(f"   [DEBUG] Timesteps shape: {getattr(t, 'shape', None)}, dtype: {getattr(t, 'dtype', None)}, device: {getattr(t, 'device', None)}")
+            print(f"   [DEBUG] Timesteps shape: {getattr(t, 'shape', None)}, dtype: {getattr(t, 'dtype', None)}, device: {getattr(t, 'device', None)}, contiguous: {t.is_contiguous()}")
             out = model(x, t, **kwargs)
             print(f"   [DEBUG] Model output shape: {out.shape}")
             return out

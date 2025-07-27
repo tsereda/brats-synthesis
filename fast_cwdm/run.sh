@@ -122,7 +122,7 @@ if [[ $MODEL == 'unet' ]]; then
   ADDITIVE_SKIP=False;      # Set True to save memory
   BATCH_SIZE=2;
   IMAGE_SIZE=224;           # Height from validated crop (was 224)
-  IN_CHANNELS=24;           # 3 modalities * 8 DWT components each (DWT: 3 modalities)
+  IN_CHANNELS=32;           # 3 modalities * 8 DWT components each (DWT: 3 modalities)
   NOISE_SCHED='linear';
   # Set sample schedule explicitly - now using command line args with defaults
   SAMPLE_SCHEDULE=${SAMPLING_STRATEGY:-direct}   # direct or sampled

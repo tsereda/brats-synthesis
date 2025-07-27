@@ -298,7 +298,7 @@ def create_argparser():
         concat_coords=False, # if true, add 3 (for 3d) or 2 (for 2d) to in_channels
         contr="",
         save_cropped=False,  # ADDED: Option to save cropped versions
-        in_channels=24,
+        in_channels=32,
     )
     defaults.update({k:v for k, v in model_and_diffusion_defaults().items() if k not in defaults})
     parser = argparse.ArgumentParser()

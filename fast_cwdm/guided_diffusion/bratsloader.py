@@ -14,14 +14,14 @@ class BRATSVolumes(torch.utils.data.Dataset):
         self.gentype = gen_type
         self.seqtypes = ['t1n', 't1c', 't2w', 't2f', 'seg']
         
-        # DWT-compatible crop bounds: (160, 208, 154) - all even dimensions
+        # DWT-compatible crop bounds: (160, 208, 152) - all even dimensions
         self.crop_bounds = {
             'x_min': 39, 'x_max': 199,  # width: 160
             'y_min': 17, 'y_max': 225,  # height: 208
-            'z_min': 0,  'z_max': 154   # depth: 154
+            'z_min': 0,  'z_max': 152   # depth: 152
         }
         
-        print(f"🔧 Using crop: 160x208x154 (DWT-compatible)")
+        print(f"🔧 Using crop: 160x208x152 (DWT-compatible)")
 
         self.database = []
         for root, dirs, files in os.walk(self.directory):

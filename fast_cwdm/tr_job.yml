@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: 2-fast-cwdm-t1c
+  name: 5-fast-cwdm-t2f
 spec:
   backoffLimit: 0
   template:
@@ -105,7 +105,7 @@ spec:
               rm -rf datasets/BRATS2023/training/BraTS-MET-00232-000/
               #python scripts/check_data_integrity.py --data_dir datasets/BRATS2023/training
               python debug_validation.py
-              bash run.sh --sampling-strategy sampled --timesteps 100 --mode train --train_modality t1c #"t1n" "t1c" "t2w" "t2f"
+              bash run.sh --sampling-strategy sampled --timesteps 100 --mode train --train_modality t2f #"t1n" "t1c" "t2w" "t2f"
               ls -la /data/checkpoints/
 
               echo "Job completed successfully"
@@ -134,7 +134,7 @@ spec:
             sizeLimit: 50Gi
         - name: data
           persistentVolumeClaim:
-            claimName: brats2025-2
+            claimName: brats2025-5
         - name: shm
           emptyDir:
             medium: Memory

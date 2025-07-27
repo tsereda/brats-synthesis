@@ -184,10 +184,16 @@ def synthesize_modality_shared(model, diffusion, available_modalities, missing_m
         print("Step 4: Running diffusion sampling...")
         print(f"   Model mode: {getattr(model, 'mode', 'unknown')}")
         print(f"   Timesteps: {getattr(diffusion, 'num_timesteps', 'unknown')}")
-        # Add shape check callback for model input/output
+
+        # --- VALIDATION FIX: ensure correct timestep mapping ---
+        # If diffusion has a 'timestep_map' attribute, use it to remap sampled timesteps
         def model_with_shape_check(x, t, **kwargs):
             import torch as th
-            # Ensure t is a tensor, contiguous, on correct device, and long dtype
+            # Remap t if needed (for sampled schedule)
+            if hasattr(diffusion, 'timestep_map') and diffusion.timestep_map is not None:
+                map_tensor = th.tensor(diffusion.timestep_map, device=t.device, dtype=t.dtype)
+                t = map_tensor[t]
+            # Now ensure t is a tensor, contiguous, on correct device, and long dtype
             if not isinstance(t, th.Tensor):
                 t = th.tensor(t, device=x.device, dtype=th.long)
             else:
@@ -199,22 +205,6 @@ def synthesize_modality_shared(model, diffusion, available_modalities, missing_m
                     t = t.contiguous()
             print(f"   [DEBUG] Model input shape: {x.shape}")
             print(f"   [DEBUG] Timesteps shape: {getattr(t, 'shape', None)}, dtype: {getattr(t, 'dtype', None)}, device: {getattr(t, 'device', None)}, contiguous: {t.is_contiguous()}")
-            # Print actual timestep values and check for out-of-bounds robustly
-            if hasattr(diffusion, 'num_timesteps'):
-                num_timesteps = getattr(diffusion, 'num_timesteps')
-                # Convert t to CPU numpy array for inspection
-                if isinstance(t, th.Tensor):
-                    t_cpu = t.detach().cpu().flatten().tolist()
-                elif isinstance(t, (list, tuple, np.ndarray)):
-                    t_cpu = list(t)
-                else:
-                    t_cpu = [int(t)]
-                print(f"   [DEBUG] Timesteps values: {t_cpu} (allowed: 0 to {num_timesteps-1})")
-                # Check for out-of-bounds
-                for idx, val in enumerate(t_cpu):
-                    if val < 0 or val >= num_timesteps:
-                        print(f"   [ERROR] Out-of-bounds timestep detected at index {idx}: t={val}, num_timesteps={num_timesteps}")
-                        raise ValueError(f"Timestep value out of bounds at index {idx}: t={val}, num_timesteps={num_timesteps}")
             out = model(x, t, **kwargs)
             print(f"   [DEBUG] Model output shape: {out.shape}")
             return out
@@ -232,19 +222,11 @@ def synthesize_modality_shared(model, diffusion, available_modalities, missing_m
                 sample = sample_dict["sample"]
             print(f"   [DEBUG] Final sample shape: {sample.shape}")
         except Exception as e:
-            import traceback
             print(f"❌ CRITICAL ERROR in diffusion sampling:")
             print(f"   Error type: {type(e).__name__}")
             print(f"   Error message: {str(e)}")
             traceback.print_exc()
             raise e
-        _, _, cond_d, cond_h, cond_w = cond.shape
-        noise_shape = (1, 8, cond_d, cond_h, cond_w)  # Only 8 channels for noise
-        print(f"   Target noise shape: {noise_shape}")
-
-        noise = th.randn(*noise_shape, device=device, dtype=cond.dtype)
-        print(f"✅ Noise shape: {noise.shape}")
-        print(f"   Noise device: {noise.device}")
         print(f"   Noise dtype: {noise.dtype}")
         print(f"   Noise range: [{noise.min():.4f}, {noise.max():.4f}]")
 

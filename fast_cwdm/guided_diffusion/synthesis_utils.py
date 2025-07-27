@@ -204,41 +204,57 @@ def synthesize_modality_shared(model, diffusion, available_modalities, missing_m
         # Step 5: Extract wavelet components
         print("Step 5: Extracting wavelet components...")
         sample_dwt = sample
-    except Exception as e:
-        print(f"❌ Exception in synthesize_modality_shared: {e}")
-        raise
+
+        # Step 6: Converting to spatial domain...
         print("Step 6: Converting to spatial domain...")
         idwt = IDWT_3D("haar")
-        
         B, _, D, H, W = sample_dwt.shape
         print(f"   IDWT input dims: B={B}, D={D}, H={H}, W={W}")
-        
-    try:
-        spatial_sample = idwt(
-            sample_dwt[:, 0, :, :, :].view(B, 1, D, H, W) * 3.,
-            sample_dwt[:, 1, :, :, :].view(B, 1, D, H, W),
-            sample_dwt[:, 2, :, :, :].view(B, 1, D, H, W),
-            sample_dwt[:, 3, :, :, :].view(B, 1, D, H, W),
-            sample_dwt[:, 4, :, :, :].view(B, 1, D, H, W),
-            sample_dwt[:, 5, :, :, :].view(B, 1, D, H, W),
-            sample_dwt[:, 6, :, :, :].view(B, 1, D, H, W),
-            sample_dwt[:, 7, :, :, :].view(B, 1, D, H, W)
-        )
-        print(f"✅ IDWT completed. Spatial shape: {spatial_sample.shape}")
-            
-    except Exception as e:
-        import traceback
-        print(f"❌ Exception in synthesize_modality_shared: {e}")
-        traceback.print_exc()
-        raise
-        
+        try:
+            spatial_sample = idwt(
+                sample_dwt[:, 0, :, :, :].view(B, 1, D, H, W) * 3.,
+                sample_dwt[:, 1, :, :, :].view(B, 1, D, H, W),
+                sample_dwt[:, 2, :, :, :].view(B, 1, D, H, W),
+                sample_dwt[:, 3, :, :, :].view(B, 1, D, H, W),
+                sample_dwt[:, 4, :, :, :].view(B, 1, D, H, W),
+                sample_dwt[:, 5, :, :, :].view(B, 1, D, H, W),
+                sample_dwt[:, 6, :, :, :].view(B, 1, D, H, W),
+                sample_dwt[:, 7, :, :, :].view(B, 1, D, H, W)
+            )
+            print(f"✅ IDWT completed. Spatial shape: {spatial_sample.shape}")
+        except Exception as idwt_error:
+            import traceback
+            print(f"❌ IDWT failed:")
+            print(f"   Error: {str(idwt_error)}")
+            print(f"   Input shapes for IDWT:")
+            for i in range(8):
+                component = sample_dwt[:, i, :, :, :].view(B, 1, D, H, W)
+                print(f"     Component {i}: {component.shape}")
+            traceback.print_exc()
+            raise idwt_error
+
+        # Step 7: Post-processing
+        print("Step 7: Post-processing...")
+        spatial_sample = th.clamp(spatial_sample, 0, 1)
+        print(f"   After clamping range: [{spatial_sample.min():.4f}, {spatial_sample.max():.4f}]")
+
+        # Apply brain mask from first available modality
+        first_modality = list(available_modalities.values())[0].to(device)
+        if first_modality.dim() == 4:
+            first_modality = first_modality.unsqueeze(1)
+        print(f"   Brain mask shape: {first_modality.shape}")
+        print(f"   Brain mask device: {first_modality.device}")
+        brain_voxels_before = (spatial_sample > 0).sum().item()
+        spatial_sample[first_modality == 0] = 0
+        brain_voxels_after = (spatial_sample > 0).sum().item()
+        print(f"   Brain voxels: {brain_voxels_before} -> {brain_voxels_after}")
+
         # Remove batch and channel dimensions
         if spatial_sample.dim() == 5:
             spatial_sample = spatial_sample.squeeze(1)
         spatial_sample = spatial_sample[0]
-        
         print(f"✅ Final output shape: {spatial_sample.shape}")
-        
+
         # Step 8: Calculate metrics if provided
         metrics = {}
         if metrics_calculator is not None and target_data is not None:
@@ -250,20 +266,16 @@ def synthesize_modality_shared(model, diffusion, available_modalities, missing_m
                 print(f"✅ Metrics calculated: {list(metrics.keys())}")
                 if 'ssim' in metrics:
                     print(f"   SSIM: {metrics['ssim']:.4f}")
-                    
             except Exception as metrics_error:
                 print(f"❌ Metrics calculation failed: {str(metrics_error)}")
-                # Don't fail the whole process for metrics errors
                 metrics = {}
-        
         print(f"✅ Synthesis completed successfully for {missing_modality}")
         return spatial_sample, metrics
-        
     except Exception as e:
+        import traceback
         print(f"❌ CRITICAL ERROR in synthesis pipeline:")
         print(f"   Error type: {type(e).__name__}")
         print(f"   Error message: {str(e)}")
-        import traceback
         print("   Full traceback:")
         traceback.print_exc()
         raise e

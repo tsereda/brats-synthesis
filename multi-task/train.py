@@ -651,19 +651,6 @@ def multitask_val_epoch(model, loader, epoch, max_epochs, target_modality, logge
     run_synth_ssim = AverageMeter()
     
     # Dice metric for segmentation
-    dice_metric = DiceMetric(
-    include_background=False,  # Exclude background
-    reduction=MetricReduction.MEAN_BATCH,  # Per-class average
-    get_not_nans=True
-)
-
-    # Then calculate per-class Dice:
-    dice_metric(y_pred=pred_seg_softmax, y=target_seg_fixed)
-    dice_scores = dice_metric.aggregate()
-
-    # Tumor classes are indices 1,2,3 (WT, TC, ET)
-    tumor_dice = dice_scores[:, 1:].mean()  
-    
     # Collect samples for logging
     sample_inputs, sample_targets_synth, sample_targets_seg = [], [], []
     sample_preds_synth, sample_preds_seg, sample_names = [], [], []
@@ -696,7 +683,6 @@ def multitask_val_epoch(model, loader, epoch, max_epochs, target_modality, logge
                     sigma_scale=0.125,
                     padding_mode="constant",
                     cval=0.0,
-                # Debug: Print unique values in raw target_segmentation before any processing
                 )
                 print(f"[VAL DEBUG] Batch {idx}: target_segmentation unique values BEFORE any processing: {torch.unique(target_segmentation)}")
 
@@ -728,7 +714,6 @@ def multitask_val_epoch(model, loader, epoch, max_epochs, target_modality, logge
                 if target_seg_fixed.dim() == 5 and target_seg_fixed.shape[1] == 1:
                     target_seg_fixed = target_seg_fixed.squeeze(1)
                 # BraTS label conversion: {0,1,2,4} → {0,1,2,3}
-
 
                 # Debug: Print unique values and shapes for predictions and targets
                 print(f"[DEBUG] pred_seg_discrete shape: {pred_seg_discrete.shape}, unique: {torch.unique(pred_seg_discrete)}")
@@ -792,7 +777,6 @@ def multitask_val_epoch(model, loader, epoch, max_epochs, target_modality, logge
 
             except Exception as e:
                 print(f"Error in validation step {idx}: {e}")
-                import traceback
                 traceback.print_exc()
                 continue
 

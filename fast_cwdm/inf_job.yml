@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: 4-inf-fastcwdm-t2w
+  name: 1-inf-fastcwdm-t2f
 spec:
   backoffLimit: 0
   template:
@@ -66,15 +66,15 @@ spec:
               mkdir -p ./checkpoints
 
               ls -la /data/checkpoints/
-              cp /data/checkpoints/brats_t2w_072700_sampled_100.pt  ./checkpoints/
-              ls -la ./checkpoints/
+              # cp /data/checkpoints/brats_t2w_072700_sampled_100.pt  ./checkpoints/
+              # ls -la ./checkpoints/
 
-              python fast_cwdm/scripts/complete_dataset.py \
-                --input_dir ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData \
-                --checkpoint_dir ./checkpoints \
-                --device cuda:0 \
-                --evaluation_mode \
-                --target_modality t2w
+              # python fast_cwdm/scripts/complete_dataset.py \
+              #   --input_dir ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData \
+              #   --checkpoint_dir ./checkpoints \
+              #   --device cuda:0 \
+              #   --evaluation_mode \
+              #   --target_modality t2f
          
           volumeMounts:
             - name: workspace
@@ -100,7 +100,7 @@ spec:
             sizeLimit: 50Gi
         - name: data
           persistentVolumeClaim:
-            claimName: brats2025-4
+            claimName: brats2025-1
         - name: shm
           emptyDir:
             medium: Memory

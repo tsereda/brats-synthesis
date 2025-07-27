@@ -438,7 +438,7 @@ def main():
     if args.diffusion_steps:
         print(f"🎯 Overriding diffusion steps: {args.diffusion_steps}")
     
-    print(f"🧠 Enhanced synthesis with SHARED SYNTHESIS UTILITIES")
+    print(f"  Enhanced synthesis with SHARED SYNTHESIS UTILITIES")
     print(f"   This ensures 100% consistency between training validation and inference")
     print(f"   Crop bounds: {CROP_BOUNDS}")
     print(f"   Cropped shape: {CROPPED_SHAPE}")
@@ -475,7 +475,7 @@ def main():
             remaining_cases = len(case_dirs) - i
             eta_seconds = avg_time * remaining_cases
             eta_minutes = eta_seconds / 60
-            print(f"\n📊 Progress: {i}/{len(case_dirs)} | Avg: {avg_time:.1f}s/case | ETA: {eta_minutes:.1f} min")
+            print(f"\nProgress: {i}/{len(case_dirs)} | Avg: {avg_time:.1f}s/case | ETA: {eta_minutes:.1f} min")
         
         success, metrics = process_case(
             case_dir, args.output_dir, args.checkpoint_dir, device,
@@ -487,7 +487,7 @@ def main():
             # Track sample times
             if 'sample_time' in metrics:
                 sample_times.append(metrics['sample_time'])
-                print(f"⏱️ Case sample time: {metrics['sample_time']:.2f}s")
+                print(f"⏱Case sample time: {metrics['sample_time']:.2f}s")
             
             # Collect metrics if available
             if metrics:
@@ -528,9 +528,9 @@ def main():
     
     # Print comprehensive metrics summary
     if args.evaluate_metrics and any(all_metrics.values()):
-        print(f"\n=== 🧠 BRAIN-MASKED COMPREHENSIVE METRICS (SHARED PIPELINE) ===")
+        print(f"\n=== BRAIN-MASKED COMPREHENSIVE METRICS (SHARED PIPELINE) ===")
         print(f"Using VALIDATED WAVELET-FRIENDLY crop bounds with {CROPPED_SHAPE} dimensions")
-        print(f"🔄 SHARED synthesis utilities ensure 100% consistency with training validation")
+        print(f"SHARED synthesis utilities ensure 100% consistency with training validation")
         for modality, metrics_list in all_metrics.items():
             if metrics_list:
                 print(f"\n{modality.upper()} Synthesis:")
@@ -570,8 +570,8 @@ def main():
                 
                 print(f"  Cases: {len(metrics_list)}")
     
-    print(f"\n✅ ENHANCED FAST-CWDM with SHARED SYNTHESIS UTILITIES complete!")
-    print(f"   🔄 100% consistency between training validation and inference")
+    print(f"\n FAST-CWDM with SHARED SYNTHESIS UTILITIES complete!")
+    print(f"   100% consistency between training validation and inference")
     print(f"   Memory efficiency: ~42% reduction")
     print(f"   Brain preservation: 100% validated")
     print(f"   DWT compatibility: Perfect (160x224x160)")

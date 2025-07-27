@@ -227,7 +227,7 @@ def create_model_args(sample_schedule="direct", diffusion_steps=1000):
     args.rescale_learned_sigmas = False
     
     # Model channels: 3 modalities * 8 DWT components each
-    args.in_channels = 24
+    args.in_channels =32
     args.out_channels = 8
     
     # From checkpoint

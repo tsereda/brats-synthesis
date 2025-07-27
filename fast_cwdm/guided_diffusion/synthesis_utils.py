@@ -165,6 +165,51 @@ def synthesize_modality_shared(model, diffusion, available_modalities, missing_m
 
         # Step 2: Create noise tensor with validation
         print("Step 2: Creating noise tensor...")
+        B = cond.shape[0]
+        C = cond.shape[1]
+        D, H, W = cond.shape[2:]
+        noise = th.randn(B, 8, D, H, W, device=device, dtype=cond.dtype)
+        print(f"   Noise shape: {noise.shape}")
+        print(f"   Noise device: {noise.device}")
+        print(f"   Noise dtype: {noise.dtype}")
+
+        # Step 3: Concatenate noise and conditioning
+        print("Step 3: Concatenating noise and conditioning...")
+        sample_input = th.cat([noise, cond], dim=1)
+        print(f"   Sample input shape: {sample_input.shape}")
+        print(f"   Sample input dtype: {sample_input.dtype}")
+        print(f"   Sample input device: {sample_input.device}")
+
+        # Step 4: Running diffusion sampling...
+        print("Step 4: Running diffusion sampling...")
+        print(f"   Model mode: {getattr(model, 'mode', 'unknown')}")
+        print(f"   Timesteps: {getattr(diffusion, 'num_timesteps', 'unknown')}")
+        # Add shape check callback for model input/output
+        def model_with_shape_check(x, t, **kwargs):
+            print(f"   [DEBUG] Model input shape: {x.shape}")
+            out = model(x, t, **kwargs)
+            print(f"   [DEBUG] Model output shape: {out.shape}")
+            return out
+
+        # Use p_sample_loop_progressive if available, else p_sample_loop
+        try:
+            for sample_dict in diffusion.p_sample_loop_progressive(
+                model_with_shape_check,
+                shape=sample_input.shape,
+                noise=sample_input,
+                cond=None,
+                device=device,
+                progress=True,
+            ):
+                sample = sample_dict["sample"]
+            print(f"   [DEBUG] Final sample shape: {sample.shape}")
+        except Exception as e:
+            import traceback
+            print(f"❌ CRITICAL ERROR in diffusion sampling:")
+            print(f"   Error type: {type(e).__name__}")
+            print(f"   Error message: {str(e)}")
+            traceback.print_exc()
+            raise e
         _, _, cond_d, cond_h, cond_w = cond.shape
         noise_shape = (1, 8, cond_d, cond_h, cond_w)  # Only 8 channels for noise
         print(f"   Target noise shape: {noise_shape}")

@@ -714,7 +714,12 @@ def multitask_val_epoch(model, loader, epoch, max_epochs, target_modality, logge
                 if target_seg_fixed.dim() == 5 and target_seg_fixed.shape[1] == 1:
                     target_seg_fixed = target_seg_fixed.squeeze(1)
                 # BraTS label conversion: {0,1,2,4} → {0,1,2,3}
+
                 target_seg_fixed[target_seg_fixed == 4] = 3
+
+                # Debug: Print unique values and shapes for predictions and targets
+                print(f"[DEBUG] pred_seg_discrete shape: {pred_seg_discrete.shape}, unique: {torch.unique(pred_seg_discrete)}")
+                print(f"[DEBUG] target_seg_fixed shape: {target_seg_fixed.shape}, unique: {torch.unique(target_seg_fixed)}")
 
                 pred_seg_for_dice = pred_seg_discrete.clone()
                 if pred_seg_for_dice.dim() == 5 and pred_seg_for_dice.shape[1] == 1:

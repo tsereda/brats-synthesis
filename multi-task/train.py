@@ -722,9 +722,29 @@ def multitask_val_epoch(model, loader, epoch, max_epochs, target_modality, logge
 
                 target_seg_fixed[target_seg_fixed == 4] = 3
 
+
                 # Debug: Print unique values and shapes for predictions and targets
                 print(f"[DEBUG] pred_seg_discrete shape: {pred_seg_discrete.shape}, unique: {torch.unique(pred_seg_discrete)}")
                 print(f"[DEBUG] target_seg_fixed shape: {target_seg_fixed.shape}, unique: {torch.unique(target_seg_fixed)}")
+
+                # Debug: Visualize a central slice of prediction and target for first 3 batches
+                if idx < 3:
+                    import matplotlib.pyplot as plt
+                    # Take the first sample in batch
+                    pred_np = pred_seg_discrete[0].detach().cpu().numpy()
+                    target_np = target_seg_fixed[0].detach().cpu().numpy()
+                    # Get central slice along last axis
+                    z = pred_np.shape[-1] // 2
+                    fig, axs = plt.subplots(1, 2, figsize=(8, 4))
+                    axs[0].imshow(pred_np[:, :, z], vmin=0, vmax=3, cmap='tab10')
+                    axs[0].set_title('Predicted seg (val)')
+                    axs[1].imshow(target_np[:, :, z], vmin=0, vmax=3, cmap='tab10')
+                    axs[1].set_title('GT seg (val)')
+                    for ax in axs:
+                        ax.axis('off')
+                    plt.tight_layout()
+                    plt.savefig(f"val_debug_seg_epoch{epoch+1}_batch{idx+1}.png")
+                    plt.close(fig)
 
                 pred_seg_for_dice = pred_seg_discrete.clone()
                 if pred_seg_for_dice.dim() == 5 and pred_seg_for_dice.shape[1] == 1:

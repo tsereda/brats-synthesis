@@ -162,42 +162,6 @@ def synthesize_modality_shared(model, diffusion, available_modalities, missing_m
         print(f"   Conditioning device: {cond.device}")
         print(f"   Conditioning dtype: {cond.dtype}")
         print(f"   Conditioning range: [{cond.min():.4f}, {cond.max():.4f}]")
-        
-        # Step 2: Create noise tensor with validation
-        print("Step 2: Creating noise tensor...")
-        _, _, cond_d, cond_h, cond_w = cond.shape
-        noise_shape = (1, 8, cond_d, cond_h, cond_w)  # Only 8 channels for noise
-        print(f"   Target noise shape: {noise_shape}")
-        
-        noise = th.randn(*noise_shape, device=device, dtype=cond.dtype)
-        print(f"✅ Noise shape: {noise.shape}")
-        print(f"   Noise device: {noise.device}")
-        print(f"   Noise dtype: {noise.dtype}")
-        print(f"   Noise range: [{noise.min():.4f}, {noise.max():.4f}]")
-        
-        # Step 3: No concatenation - keep noise and conditioning separate!
-        print("Step 3: Keeping noise and conditioning separate...")
-        print(f"   Noise: {noise.shape}")
-        print(f"   Conditioning: {cond.shape}")
-        print(f"   These will be handled separately in the diffusion process")
-        
-        # Step 4: Run diffusion sampling with monitoring
-        print("Step 4: Running diffusion sampling...")
-        print(f"   Model mode: {getattr(diffusion, 'mode', 'default')}")
-        print(f"   Timesteps: {diffusion.num_timesteps}")
-        
-        model.eval()
-        
-        with th.no_grad():
-            final_sample = None
-    try:
-        # Step 1: Prepare conditioning with detailed checks
-        print("Step 1: Preparing conditioning...")
-        cond = prepare_conditioning_debug(available_modalities, missing_modality, device)
-        print(f"✅ Conditioning shape: {cond.shape}")
-        print(f"   Conditioning device: {cond.device}")
-        print(f"   Conditioning dtype: {cond.dtype}")
-        print(f"   Conditioning range: [{cond.min():.4f}, {cond.max():.4f}]")
 
         # Step 2: Create noise tensor with validation
         print("Step 2: Creating noise tensor...")

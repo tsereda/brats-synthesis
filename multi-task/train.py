@@ -708,6 +708,11 @@ def multitask_val_epoch(model, loader, epoch, max_epochs, target_modality, logge
                 # Segmentation metrics (robust Dice calculation)
                 pred_seg_softmax = post_softmax(pred_segmentation_raw)
                 pred_seg_discrete = post_pred_seg(pred_seg_softmax)
+                # Fix: ensure pred_seg_discrete is [B, ...] with class indices, not [B, 4, ...]
+                if pred_seg_discrete.dim() == 5 and pred_seg_discrete.shape[1] == 4:
+                    pred_seg_discrete = torch.argmax(pred_seg_softmax, dim=1)
+                elif pred_seg_discrete.dim() == 5 and pred_seg_discrete.shape[1] == 1:
+                    pred_seg_discrete = pred_seg_discrete.squeeze(1)
 
                 # --- Robust Dice calculation with label/shape fix ---
                 target_seg_fixed = target_segmentation.clone()

@@ -71,7 +71,7 @@ spec:
             sudo mkdir /data/checkpoints/
             sudo chmod 777 /data/checkpoints/
 
-            git clone -cropping https://github.com/tsereda/brats-synthesis.git ${REPO_PATH}
+            git clone -b cropping https://github.com/tsereda/brats-synthesis.git ${REPO_PATH}
             cd ${REPO_PATH}
             
             sudo apt-get update && sudo apt-get install -y p7zip-full wget git
@@ -97,7 +97,7 @@ spec:
             echo "Training patients: $(ls datasets/BRATS2023/training/ | wc -l)"
             echo "Validation patients: $(ls datasets/BRATS2023/validation/ | wc -l)"
 
-            pip install pyyaml torch tqdm numpy nibabel wandb matplotlib blobfile tensorboard
+            pip install pyyaml torch tqdm numpy nibabel wandb matplotlib blobfile tensorboard PyWavelets mondai
             
             python -c "import wandb; print(f'W&B version: {wandb.__version__}')"
             python -c "import torch; print(f'GPUs available: {torch.cuda.device_count()}')"
@@ -120,12 +120,9 @@ spec:
             cd fast_cwdm
             rm -rf datasets/BRATS2023/training/BraTS-MET-00232-000/
             #python scripts/check_data_integrity.py --data_dir datasets/BRATS2023/training
-            python dataset-analysis.py \
-            --data_dir ./datasets/BRATS2023/training \
-            --validation_samples 10 \
-            --output_dir ./crop_analysis_results
+            # Option 1: Change to fast_cwdm directory first (recommended)
+            cd fast_cwdm
             bash run.sh --sampling-strategy sampled --timesteps 100 --mode train --train_modality t2f #"t1n" "t1c" "t2w" "t2f"
-
             ls -la /data/checkpoints/
 
             tail -f /dev/null

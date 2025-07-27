@@ -150,52 +150,53 @@ def prepare_conditioning(available_modalities, missing_modality, device):
 def synthesize_modality_shared(model, diffusion, available_modalities, missing_modality, device, 
                               metrics_calculator=None, target_data=None):
     """
-    Shared synthesis function used by both training validation and inference.
-    
-    Args:
-        model: The diffusion model
-        diffusion: The diffusion process
-        available_modalities: Dict of available modality tensors
-        missing_modality: String name of missing modality
-        device: torch device
-        metrics_calculator: Optional ComprehensiveMetrics instance
-        target_data: Optional ground truth tensor for metrics
-    
-    Returns:
-        synthesized_tensor: The synthesized modality
-        metrics: Dict of calculated metrics (if target provided)
+    FIXED: Proper channel concatenation for validation synthesis
     """
+    print(f"\n=== Synthesizing {missing_modality} (FIXED PIPELINE) ===")
     
-    # Prepare conditioning
+    # Prepare conditioning - this should give us 24 channels (3 modalities × 8 each)
     cond = prepare_conditioning(available_modalities, missing_modality, device)
+    print(f"Conditioning shape: {cond.shape}")  # Should be [1, 24, D, H, W]
     
-    # Create noise tensor with CORRECT dimensions based on DWT output
+    # Create noise tensor - this should be 8 channels
     _, _, cond_d, cond_h, cond_w = cond.shape
-    noise_shape = (1, 8, cond_d, cond_h, cond_w)  # Match DWT dimensions
+    noise_shape = (1, 8, cond_d, cond_h, cond_w)
     noise = th.randn(*noise_shape, device=device)
+    print(f"Noise shape: {noise.shape}")  # Should be [1, 8, D, H, W]
     
-    # Sample using p_sample_loop_progressive
+    # CRITICAL FIX: Manually concatenate conditioning and noise to get 32 channels
+    # This matches exactly what happens during training in p_mean_variance()
+    combined_input = th.cat([noise, cond], dim=1)  # [1, 32, D, H, W]
+    print(f"Combined input shape: {combined_input.shape}")  # Should be [1, 32, D, H, W]
+    
+    # Use the combined input as the "noise" parameter
+    # The sampling function will treat this as the starting point
     with th.no_grad():
         final_sample = None
         for sample_dict in diffusion.p_sample_loop_progressive(
             model=model,
-            shape=noise.shape,
+            shape=combined_input.shape,  # Use the 32-channel shape
             time=diffusion.num_timesteps,
-            noise=noise,
-            cond=cond,
+            noise=combined_input,  # Pass the concatenated tensor
             clip_denoised=True,
             model_kwargs={}
+            # Note: No separate 'cond' parameter - it's already in the noise tensor
         ):
             final_sample = sample_dict
         
         sample = final_sample["sample"]
+    
+    # Extract only the first 8 channels (the synthesized DWT components)
+    # The conditioning channels will also be in the output, but we only want the first 8
+    sample = sample[:, :8, :, :, :]  # Take only first 8 channels
+    print(f"Sample shape after extraction: {sample.shape}")
     
     # Convert back to spatial domain using IDWT
     idwt = IDWT_3D("haar")
     B, _, D, H, W = sample.shape
     
     spatial_sample = idwt(
-        sample[:, 0, :, :, :].view(B, 1, D, H, W) * 3.,  # Multiply LLL by 3
+        sample[:, 0, :, :, :].view(B, 1, D, H, W) * 3.,
         sample[:, 1, :, :, :].view(B, 1, D, H, W),
         sample[:, 2, :, :, :].view(B, 1, D, H, W),
         sample[:, 3, :, :, :].view(B, 1, D, H, W),
@@ -217,10 +218,10 @@ def synthesize_modality_shared(model, diffusion, available_modalities, missing_m
     
     # Remove batch and channel dimensions
     if spatial_sample.dim() == 5:
-        spatial_sample = spatial_sample.squeeze(1)  # Remove channel
-    spatial_sample = spatial_sample[0]  # Remove batch
+        spatial_sample = spatial_sample.squeeze(1)
+    spatial_sample = spatial_sample[0]
     
-    # Calculate comprehensive metrics if target is provided
+    # Calculate metrics if provided
     metrics = {}
     if metrics_calculator is not None and target_data is not None:
         metrics = metrics_calculator.calculate_metrics(
@@ -228,7 +229,6 @@ def synthesize_modality_shared(model, diffusion, available_modalities, missing_m
         )
     
     return spatial_sample, metrics
-
 
 def apply_uncrop_to_original(cropped_output):
     """Uncrop from (160,224,160) back to (240,240,160)"""

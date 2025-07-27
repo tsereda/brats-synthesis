@@ -63,12 +63,6 @@ spec:
               
               sudo apt-get update && sudo apt-get install -y p7zip-full wget git
               
-              7z x /data/ASNR-MICCAI-BraTS2023-GLI-MET-TrainingData.tar.gz
-              7z x /data/ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData.tar.gz
-
-              7z x ASNR-MICCAI-BraTS2023-GLI-MET-TrainingData.tar
-              7z x ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData.tar
-              
               pip install "numpy<2.0" pyyaml tqdm nibabel wandb matplotlib monai[all]
               pip install --upgrade tensorboard protobuf typing_extensions
               
@@ -77,6 +71,12 @@ spec:
               python -c "import torch; print(f'GPUs available: {torch.cuda.device_count()}')"
               
               pip install "numpy<2.0" torch nibabel matplotlib monai[all]
+
+              7z x /data/ASNR-MICCAI-BraTS2023-GLI-MET-TrainingData.tar.gz
+              7z x /data/ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData.tar.gz
+
+              7z x ASNR-MICCAI-BraTS2023-GLI-MET-TrainingData.tar
+              7z x ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData.tar
   
               #choose from 'FLAIR', 'T1CE', 'T1', 'T2', 'all'
               python multi-task/train.py --batch_size 1 --max_epoch 2 --target_modality FLAIR

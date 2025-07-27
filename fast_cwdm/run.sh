@@ -71,7 +71,7 @@ if [[ $MODEL == 'unet' ]]; then
   echo "MODEL: WDM (U-Net) with validated crop bounds";
   CHANNEL_MULT=1,2,2,4,4;
   ADDITIVE_SKIP=False;      # Set True to save memory
-  BATCH_SIZE=2;
+  BATCH_SIZE=1;
   IMAGE_SIZE=224;           # Height from validated crop (was 224)
   IN_CHANNELS=32;           # 8 (target) + 24 (3 modalities * 8 DWT components each)
   NOISE_SCHED='linear';

@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: 3-inf-fast-cwdm-t1n
+  name: 1-inf-fast-cwdm-t1c
 spec:
   nodeSelector:
     #topology.kubernetes.io/region: us-west
@@ -64,7 +64,7 @@ spec:
           sudo apt-get update && sudo apt-get install -y p7zip-full wget git
           pip install nibabel blobfile wandb batchgenerators simpleITK gdown monai
 
-          git clone https://github.com/tsereda/brats-synthesis.git ${REPO_PATH}
+          git clone -b inf https://github.com/tsereda/brats-synthesis.git ${REPO_PATH}
           cd ${REPO_PATH}
 
           7z x /data/ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData.tar.gz
@@ -76,7 +76,7 @@ spec:
           mkdir -p ./checkpoints
 
           ls -la /data/checkpoints/
-          cp /data/checkpoints/brats_t1n_069850_sampled_100.pt  ./checkpoints/
+          cp /data/checkpoints/brats_*.pt  ./checkpoints/
           ls -la ./checkpoints/
 
           python fast_cwdm/scripts/complete_dataset.py \
@@ -84,7 +84,7 @@ spec:
             --checkpoint_dir ./checkpoints \
             --device cuda:0 \
             --evaluation_mode \
-            --target_modality t1n
+            --target_modality t1c
           tail -f /dev/null
      
       volumeMounts:
@@ -111,7 +111,7 @@ spec:
         sizeLimit: 50Gi
     - name: data
       persistentVolumeClaim:
-        claimName: brats2025-3
+        claimName: brats2025-1
     - name: shm
       emptyDir:
         medium: Memory

@@ -1,9 +1,7 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: fast-cwdm
-  labels:
-    app: fast-cwdm
+  name: 6-fast-cwdm
 spec:
   nodeSelector:
     #topology.kubernetes.io/region: us-west
@@ -69,7 +67,7 @@ spec:
       command: ["/bin/bash", "-c"]
       args:
         - |
-          git clone https://github.com/tsereda/brats-synthesis.git ${REPO_PATH}
+          git clone -seemore https://github.com/tsereda/brats-synthesis.git ${REPO_PATH}
           cd ${REPO_PATH}
 
           sudo apt-get update && sudo apt-get install -y p7zip-full wget git
@@ -82,11 +80,9 @@ spec:
 
           # Extract and move to correct locations  
           7z x /data/ASNR-MICCAI-BraTS2023-GLI-MET-TrainingData.zip
-          7z x /data/ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData.zip
 
           # Move to expected locations
           mv ASNR-MICCAI-BraTS2023-GLI-MET-TrainingData/* datasets/BRATS2023/training/
-          mv ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData/* datasets/BRATS2023/validation/
 
           # Clean up any hidden files that might cause issues
           find datasets/BRATS2023/training -name ".*" -delete 2>/dev/null || true
@@ -148,7 +144,7 @@ spec:
         sizeLimit: 50Gi
     - name: data
       persistentVolumeClaim:
-        claimName: brats2025-3
+        claimName: brats2025-6
     - name: shm
       emptyDir:
         medium: Memory

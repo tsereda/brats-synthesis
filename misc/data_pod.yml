@@ -38,10 +38,10 @@ spec:
       volumeMounts:
         - name: workspace
           mountPath: /app
-        - name: data1
-          mountPath: /data1
         - name: data5
           mountPath: /data5
+        - name: data6
+          mountPath: /data6
         - name: shm
           mountPath: /dev/shm
       resources:
@@ -57,12 +57,12 @@ spec:
     - name: workspace
       emptyDir:
         sizeLimit: 50Gi
-    - name: data1
-      persistentVolumeClaim:
-        claimName: brats2025-1
     - name: data5
       persistentVolumeClaim:
         claimName: brats2025-5
+    - name: data6
+      persistentVolumeClaim:
+        claimName: brats2025-6
     - name: shm
       emptyDir:
         medium: Memory

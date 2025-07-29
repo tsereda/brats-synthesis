@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: 4-inf-fast-cwdm-t1n
+  name: 1-inf-fast-cwdm-t1c
 spec:
   nodeSelector:
     #topology.kubernetes.io/region: us-west
@@ -84,7 +84,7 @@ spec:
             --checkpoint_dir ./checkpoints \
             --device cuda:0 \
             --evaluation_mode \
-            --target_modality t1n
+            --target_modality t1c
           tail -f /dev/null
      
       volumeMounts:
@@ -111,7 +111,7 @@ spec:
         sizeLimit: 50Gi
     - name: data
       persistentVolumeClaim:
-        claimName: brats2025-4
+        claimName: brats2025-1
     - name: shm
       emptyDir:
         medium: Memory

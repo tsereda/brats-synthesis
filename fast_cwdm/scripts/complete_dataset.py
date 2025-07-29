@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """
-Enhanced medical image synthesis script with SSIM evaluation
+Enhanced medical image synthesis script with SSIM evaluation and Wandb integration
 Adds comprehensive metrics including SSIM for Fast-CWDM evaluation
 Now supports both real synthesis and evaluation modes
 FIXED: Proper checkpoint parsing for sampled_X.pt format
 ENHANCED: Brain masking for accurate clinical evaluation
+NEW: Wandb integration for experiment tracking and metrics logging
 """
 
 import argparse
@@ -17,6 +18,7 @@ import sys
 import random
 import re
 import time
+import wandb
 
 sys.path.append(".")
 
@@ -603,6 +605,21 @@ def process_case(case_dir, output_dir, checkpoint_dir, device, metrics_calculato
             metrics_calculator, target_data, override_steps
         )
         
+        # Log case-level metrics to wandb
+        if metrics and 'l1' in metrics:
+            case_metrics = {
+                f"case/{missing_modality}/l1": metrics['l1'],
+                f"case/{missing_modality}/mse": metrics['mse'],
+                f"case/{missing_modality}/psnr": metrics['psnr'],
+                f"case/{missing_modality}/ssim": metrics['ssim'],
+                f"case/{missing_modality}/brain_volume_ratio": metrics['brain_volume_ratio'],
+                f"case/{missing_modality}/sample_time": metrics['sample_time'],
+                f"case/step": metrics.get('steps', 0),
+                "case/name": case_name,
+                "case/modality": missing_modality
+            }
+            wandb.log(case_metrics)
+        
         # Save result (skip in evaluation mode to avoid overwriting originals)
         if not evaluation_mode:
             save_result(synthesized, case_dir, missing_modality, output_dir)
@@ -620,7 +637,7 @@ def process_case(case_dir, output_dir, checkpoint_dir, device, metrics_calculato
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Enhanced medical image synthesis with brain-masked comprehensive metrics")
+    parser = argparse.ArgumentParser(description="Enhanced medical image synthesis with brain-masked comprehensive metrics and Wandb integration")
     parser.add_argument("--input_dir", default="./datasets/BRATS2023/pseudo_validation")
     parser.add_argument("--output_dir", default="./datasets/BRATS2023/pseudo_validation_completed")
     parser.add_argument("--checkpoint_dir", default="./checkpoints")
@@ -637,10 +654,60 @@ def main():
     parser.add_argument("--diffusion_steps", type=int, default=None,
                         help="Override diffusion steps (default: parse from checkpoint)")
     
+    # Wandb arguments
+    parser.add_argument("--wandb_project", default="fast-cwmd-brats-inference",
+                        help="Wandb project name")
+    parser.add_argument("--wandb_entity", default="timgsereda",
+                        help="Wandb entity/username")
+    parser.add_argument("--wandb_mode", default="online", choices=["online", "offline", "disabled"],
+                        help="Wandb logging mode")
+    parser.add_argument("--wandb_run_name", default=None,
+                        help="Custom run name for wandb")
+    parser.add_argument("--wandb_tags", nargs="*", default=[],
+                        help="Tags for wandb run")
+    
     args = parser.parse_args()
     
     device = th.device(args.device if th.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
+    
+    # --- Wandb initialization ---
+    wandb_config = vars(args).copy()
+    wandb_config['device'] = str(device)
+    
+    # Create run name if not provided
+    if not args.wandb_run_name:
+        mode_suffix = "eval" if args.evaluation_mode else "synth"
+        target_suffix = f"_{args.target_modality}" if args.target_modality else ""
+        steps_suffix = f"_s{args.diffusion_steps}" if args.diffusion_steps else ""
+        args.wandb_run_name = f"inference_{mode_suffix}{target_suffix}{steps_suffix}"
+    
+    # Add automatic tags
+    auto_tags = []
+    if args.evaluation_mode:
+        auto_tags.append("evaluation")
+    else:
+        auto_tags.append("synthesis")
+    
+    if args.target_modality:
+        auto_tags.append(f"target_{args.target_modality}")
+    
+    if args.diffusion_steps:
+        auto_tags.append(f"steps_{args.diffusion_steps}")
+    
+    all_tags = args.wandb_tags + auto_tags
+    
+    wandb.init(
+        project=args.wandb_project,
+        entity=args.wandb_entity,
+        config=wandb_config,
+        mode=args.wandb_mode,
+        name=args.wandb_run_name,
+        tags=all_tags
+    )
+    
+    print(f"🔮 Wandb initialized: {wandb.run.name}")
+    # --- End wandb initialization ---
     
     if args.evaluation_mode:
         print(f"🧪 EVALUATION MODE: Using complete dataset with artificial exclusion")
@@ -670,6 +737,15 @@ def main():
     
     print(f"Found {len(case_dirs)} cases")
     
+    # Log run configuration to wandb
+    wandb.log({
+        "config/total_cases": len(case_dirs),
+        "config/max_cases": args.max_cases or len(case_dirs),
+        "config/evaluation_mode": args.evaluation_mode,
+        "config/target_modality": args.target_modality or "random",
+        "config/seed": args.seed
+    })
+    
     # Process cases
     if not args.evaluation_mode:
         os.makedirs(args.output_dir, exist_ok=True)
@@ -689,6 +765,15 @@ def main():
             eta_seconds = avg_time * remaining_cases
             eta_minutes = eta_seconds / 60
             print(f"\nProgress: {i}/{len(case_dirs)} | Avg: {avg_time:.1f}s/case | ETA: {eta_minutes:.1f} min")
+            
+            # Log progress to wandb
+            wandb.log({
+                "progress/processed_cases": i,
+                "progress/successful_cases": successful,
+                "progress/success_rate": successful / i if i > 0 else 0,
+                "progress/avg_sample_time": avg_time,
+                "progress/eta_minutes": eta_minutes
+            })
         
         success, metrics = process_case(
             case_dir, args.output_dir, args.checkpoint_dir, device,
@@ -721,6 +806,15 @@ def main():
     print(f"Successful: {successful}/{len(case_dirs)}")
     print(f"Total time: {total_duration:.2f} seconds ({total_duration/60:.2f} minutes)")
     
+    # Log final summary to wandb
+    final_summary = {
+        "summary/successful_cases": successful,
+        "summary/total_cases": len(case_dirs),
+        "summary/success_rate": successful / len(case_dirs) if len(case_dirs) > 0 else 0,
+        "summary/total_time_seconds": total_duration,
+        "summary/total_time_minutes": total_duration / 60
+    }
+    
     # Print timing statistics
     if sample_times:
         avg_sample_time = np.mean(sample_times)
@@ -738,6 +832,18 @@ def main():
         if successful > 0:
             throughput = successful / (total_duration / 3600)  # cases per hour
             print(f"Throughput: {throughput:.1f} cases/hour")
+            
+        # Add timing stats to summary
+        timing_summary = {
+            "summary/avg_sample_time": avg_sample_time,
+            "summary/std_sample_time": std_sample_time,
+            "summary/min_sample_time": min_sample_time,
+            "summary/max_sample_time": max_sample_time,
+            "summary/total_synthesis_time": sum(sample_times),
+            "summary/overhead_time": total_duration - sum(sample_times),
+            "summary/throughput_cases_per_hour": throughput if successful > 0 else 0
+        }
+        final_summary.update(timing_summary)
     
     # Print comprehensive metrics summary
     if args.evaluate_metrics and any(all_metrics.values()):
@@ -764,6 +870,19 @@ def main():
                     print(f"  MSE:  {avg_metrics['mse']:.6f} ± {std_metrics['mse']:.6f}")
                     print(f"  PSNR: {avg_metrics['psnr']:.2f} ± {std_metrics['psnr']:.2f} dB")
                     print(f"  SSIM: {avg_metrics['ssim']:.4f} ± {std_metrics['ssim']:.4f}")
+                    
+                    # Log modality-specific metrics to wandb
+                    modality_summary = {
+                        f"metrics/{modality}/l1_mean": avg_metrics['l1'],
+                        f"metrics/{modality}/l1_std": std_metrics['l1'],
+                        f"metrics/{modality}/mse_mean": avg_metrics['mse'],
+                        f"metrics/{modality}/mse_std": std_metrics['mse'],
+                        f"metrics/{modality}/psnr_mean": avg_metrics['psnr'],
+                        f"metrics/{modality}/psnr_std": std_metrics['psnr'],
+                        f"metrics/{modality}/ssim_mean": avg_metrics['ssim'],
+                        f"metrics/{modality}/ssim_std": std_metrics['ssim'],
+                    }
+                    final_summary.update(modality_summary)
                 
                 # Brain volume statistics
                 brain_ratios = [m['brain_volume_ratio'] for m in metrics_list if 'brain_volume_ratio' in m]
@@ -771,6 +890,11 @@ def main():
                     avg_brain_ratio = np.mean(brain_ratios)
                     std_brain_ratio = np.std(brain_ratios)
                     print(f"  Brain volume: {avg_brain_ratio:.1%} ± {std_brain_ratio:.1%} of total")
+                    
+                    final_summary.update({
+                        f"metrics/{modality}/brain_volume_mean": avg_brain_ratio,
+                        f"metrics/{modality}/brain_volume_std": std_brain_ratio
+                    })
                 
                 # Timing metrics
                 modality_sample_times = [m['sample_time'] for m in metrics_list if 'sample_time' in m]
@@ -778,8 +902,21 @@ def main():
                     avg_time = np.mean(modality_sample_times)
                     std_time = np.std(modality_sample_times)
                     print(f"  Avg sample time: {avg_time:.2f} ± {std_time:.2f} seconds")
+                    
+                    final_summary.update({
+                        f"metrics/{modality}/sample_time_mean": avg_time,
+                        f"metrics/{modality}/sample_time_std": std_time
+                    })
                 
                 print(f"  Cases: {len(metrics_list)}")
+                final_summary[f"metrics/{modality}/cases"] = len(metrics_list)
+    
+    # Log final summary to wandb
+    wandb.log(final_summary)
+    
+    # Finish wandb run
+    wandb.finish()
+    print(f"🔮 Wandb run completed: {wandb.run.name}")
 
 
 if __name__ == "__main__":

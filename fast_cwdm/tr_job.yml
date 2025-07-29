@@ -1,9 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: 1=fast-cwdm-t1c
-  labels:
-    app: fast-cwdm-t2f
+  name: 1-fast-cwdm-t2w
 spec:
   backoffLimit: 0
   template:
@@ -105,9 +103,13 @@ spec:
               mv datasets/ fast_cwdm/
               cd fast_cwdm
               rm -rf datasets/BRATS2023/training/BraTS-MET-00232-000/
+              cp /data/BraTSChekpoints.zip BraTSChekpoints.zip 
+              unzip BraTSChekpoints.zip 
               #python scripts/check_data_integrity.py --data_dir datasets/BRATS2023/training
-              bash run.sh --sampling-strategy sampled --timesteps 100 --mode train --train_modality t2f #"t1n" "t1c" "t2w" "t2f"
-
+              cp -r BraTSCheckpoints/t1c ./t1c
+              #MODALITIES=("t1n" "t1c" "t2w" "t2f")
+              bash run.sh --sampling-strategy sampled --timesteps 100 --mode train --train_modality t2w \
+                --resume_checkpoint=./t1c/brats_t1c_074500_sampled_100.pt --resume_step=74500
               ls -la /data/checkpoints/
 
               echo "Job completed successfully"

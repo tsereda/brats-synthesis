@@ -32,6 +32,8 @@ from fast_cwdm.guided_diffusion.bratsloader import clip_and_normalize
 from fast_cwdm.DWT_IDWT.DWT_IDWT_layer import IDWT_3D, DWT_3D
 from monai.metrics import SSIMMetric, PSNRMetric
 import torch.nn.functional as F
+import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
 
 # Constants
 MODALITIES = ['t1n', 't1c', 't2w', 't2f']
@@ -141,10 +143,10 @@ def load_image(file_path):
     # Normalize using EXACT training function
     img_normalized = clip_and_normalize(img)
     
-    # Preprocess like training (from bratsloader.py __getitem__)
+    # Preprocess EXACTLY like training (from bratsloader.py __getitem__)
     img_tensor = th.zeros(1, 240, 240, 160)
     img_tensor[:, :, :, :155] = th.tensor(img_normalized)
-    img_tensor = img_tensor[:, 8:-8, 8:-8, :]  # MATCHES training exactly
+    img_tensor = img_tensor[:, 8:-8, 8:-8, :]  # ✅ MATCHES training exactly
     
     print(f"  Preprocessed shape: {img_tensor.shape}")
     return img_tensor.float()
@@ -326,6 +328,239 @@ def create_model_args(sample_schedule="direct", diffusion_steps=1000):
     args.dataset = "brats"
     
     return args
+
+
+def create_visual_comparison(available_modalities, synthesized, target_data, missing_modality, case_name, slice_indices=None):
+    """Create visual comparison of available modalities, synthesized, and ground truth."""
+    
+    # Convert tensors to numpy for visualization
+    if isinstance(synthesized, th.Tensor):
+        synthesized_np = synthesized.detach().cpu().numpy()
+    else:
+        synthesized_np = synthesized
+        
+    if isinstance(target_data, th.Tensor):
+        target_np = target_data.detach().cpu().numpy()
+    else:
+        target_np = target_data
+    
+    # Get available modality data
+    available_np = {}
+    for mod_name, mod_data in available_modalities.items():
+        if isinstance(mod_data, th.Tensor):
+            # Remove batch dimension if present
+            mod_np = mod_data.detach().cpu().numpy()
+            if mod_np.ndim == 4:  # [B, H, W, D]
+                mod_np = mod_np[0]  # [H, W, D]
+        else:
+            mod_np = mod_data
+        available_np[mod_name] = mod_np
+    
+    # Determine slice indices to visualize
+    if slice_indices is None:
+        depth = synthesized_np.shape[2]
+        # Use middle slice and a few others for good coverage
+        slice_indices = [
+            depth // 4,      # Quarter
+            depth // 2,      # Middle  
+            3 * depth // 4   # Three quarters
+        ]
+    
+    visualizations = []
+    
+    for slice_idx in slice_indices:
+        # Create figure with subplots
+        n_modalities = len(available_modalities)
+        n_cols = n_modalities + 2  # available + synthesized + ground truth
+        fig, axes = plt.subplots(1, n_cols, figsize=(3*n_cols, 3))
+        
+        if n_cols == 1:
+            axes = [axes]
+        
+        col_idx = 0
+        
+        # Plot available modalities
+        modality_order = [m for m in MODALITIES if m != missing_modality]
+        for mod_name in modality_order:
+            if mod_name in available_np:
+                slice_data = available_np[mod_name][:, :, slice_idx]
+                axes[col_idx].imshow(slice_data, cmap='gray', vmin=0, vmax=1)
+                axes[col_idx].set_title(f'{mod_name.upper()}\n(Available)', fontsize=10)
+                axes[col_idx].axis('off')
+                col_idx += 1
+        
+        # Plot synthesized
+        synth_slice = synthesized_np[:, :, slice_idx]
+        axes[col_idx].imshow(synth_slice, cmap='gray', vmin=0, vmax=1)
+        axes[col_idx].set_title(f'{missing_modality.upper()}\n(Synthesized)', fontsize=10, color='blue')
+        axes[col_idx].axis('off')
+        
+        # Add blue border to synthesized
+        rect = Rectangle((0, 0), synth_slice.shape[1]-1, synth_slice.shape[0]-1, 
+                        linewidth=3, edgecolor='blue', facecolor='none')
+        axes[col_idx].add_patch(rect)
+        col_idx += 1
+        
+        # Plot ground truth
+        if target_np is not None:
+            target_slice = target_np[:, :, slice_idx]
+            axes[col_idx].imshow(target_slice, cmap='gray', vmin=0, vmax=1)
+            axes[col_idx].set_title(f'{missing_modality.upper()}\n(Ground Truth)', fontsize=10, color='green')
+            axes[col_idx].axis('off')
+            
+            # Add green border to ground truth
+            rect = Rectangle((0, 0), target_slice.shape[1]-1, target_slice.shape[0]-1, 
+                            linewidth=3, edgecolor='green', facecolor='none')
+            axes[col_idx].add_patch(rect)
+        
+        # Add case info and slice number
+        fig.suptitle(f'{case_name} - Slice {slice_idx}/{synthesized_np.shape[2]-1}', 
+                    fontsize=12, fontweight='bold')
+        
+        plt.tight_layout()
+        
+        # Convert to wandb Image
+        import io
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+        buf.seek(0)
+        
+        # Create wandb Image
+        wandb_image = wandb.Image(buf, caption=f"{case_name}_slice_{slice_idx}")
+        visualizations.append(wandb_image)
+        
+        plt.close(fig)  # Free memory
+    
+    return visualizations
+
+
+def create_difference_maps(synthesized, target_data, missing_modality, case_name, slice_indices=None):
+    """Create difference maps between synthesized and ground truth."""
+    
+    # Convert to numpy
+    if isinstance(synthesized, th.Tensor):
+        synthesized_np = synthesized.detach().cpu().numpy()
+    else:
+        synthesized_np = synthesized
+        
+    if isinstance(target_data, th.Tensor):
+        target_np = target_data.detach().cpu().numpy()
+    else:
+        target_np = target_data
+    
+    if target_np is None:
+        return []
+    
+    # Calculate absolute difference
+    diff_np = np.abs(synthesized_np - target_np)
+    
+    # Determine slice indices
+    if slice_indices is None:
+        depth = synthesized_np.shape[2]
+        slice_indices = [depth // 2]  # Just middle slice for difference
+    
+    visualizations = []
+    
+    for slice_idx in slice_indices:
+        fig, axes = plt.subplots(1, 4, figsize=(12, 3))
+        
+        # Synthesized
+        synth_slice = synthesized_np[:, :, slice_idx]
+        im1 = axes[0].imshow(synth_slice, cmap='gray', vmin=0, vmax=1)
+        axes[0].set_title('Synthesized', fontsize=10)
+        axes[0].axis('off')
+        
+        # Ground truth
+        target_slice = target_np[:, :, slice_idx]
+        im2 = axes[1].imshow(target_slice, cmap='gray', vmin=0, vmax=1)
+        axes[1].set_title('Ground Truth', fontsize=10)
+        axes[1].axis('off')
+        
+        # Absolute difference
+        diff_slice = diff_np[:, :, slice_idx]
+        im3 = axes[2].imshow(diff_slice, cmap='hot', vmin=0, vmax=0.3)  # Scale for visibility
+        axes[2].set_title('|Difference|', fontsize=10)
+        axes[2].axis('off')
+        plt.colorbar(im3, ax=axes[2], fraction=0.046, pad=0.04)
+        
+        # Overlay difference on synthesized
+        overlay = axes[3].imshow(synth_slice, cmap='gray', vmin=0, vmax=1, alpha=0.7)
+        overlay2 = axes[3].imshow(diff_slice, cmap='Reds', vmin=0, vmax=0.3, alpha=0.5)
+        axes[3].set_title('Overlay', fontsize=10)
+        axes[3].axis('off')
+        
+        # Add case info
+        fig.suptitle(f'{case_name} - {missing_modality.upper()} Difference Analysis - Slice {slice_idx}', 
+                    fontsize=12, fontweight='bold')
+        
+        plt.tight_layout()
+        
+        # Convert to wandb Image
+        import io
+        buf = io.BytesIO()
+        plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+        buf.seek(0)
+        
+        wandb_image = wandb.Image(buf, caption=f"{case_name}_{missing_modality}_diff_slice_{slice_idx}")
+        visualizations.append(wandb_image)
+        
+        plt.close(fig)
+    
+    return visualizations
+
+
+def log_visual_samples(available_modalities, synthesized, target_data, missing_modality, case_name, 
+                      log_to_wandb=True, save_locally=False, output_dir=None):
+    """Log visual samples to wandb and optionally save locally."""
+    
+    print(f"  📸 Creating visual samples for {case_name}...")
+    
+    try:
+        # Create comparison visualizations
+        comparison_images = create_visual_comparison(
+            available_modalities, synthesized, target_data, missing_modality, case_name
+        )
+        
+        # Create difference maps if target is available
+        difference_images = []
+        if target_data is not None:
+            difference_images = create_difference_maps(
+                synthesized, target_data, missing_modality, case_name
+            )
+        
+        # Log to wandb
+        if log_to_wandb and (comparison_images or difference_images):
+            wandb_log_data = {}
+            
+            if comparison_images:
+                wandb_log_data[f"samples/{missing_modality}/comparison"] = comparison_images
+                
+            if difference_images:
+                wandb_log_data[f"samples/{missing_modality}/difference"] = difference_images
+            
+            # Add case metadata
+            wandb_log_data[f"samples/case_name"] = case_name
+            wandb_log_data[f"samples/modality"] = missing_modality
+            
+            wandb.log(wandb_log_data)
+        
+        # Save locally if requested
+        if save_locally and output_dir:
+            samples_dir = os.path.join(output_dir, "visual_samples")
+            os.makedirs(samples_dir, exist_ok=True)
+            
+            # Save comparison images
+            for i, img in enumerate(comparison_images):
+                # Note: wandb.Image doesn't easily convert back to file
+                # Would need to recreate the plots for local saving
+                pass  # Implement if needed
+        
+        print(f"  ✅ Visual samples created and logged")
+        
+    except Exception as e:
+        print(f"  ⚠️ Error creating visual samples: {e}")
+        import traceback
+        traceback.print_exc()
 
 
 def prepare_conditioning(available_modalities, missing_modality, device):
@@ -558,7 +793,8 @@ def save_result(synthesized, case_dir, missing_modality, output_dir):
 
 
 def process_case(case_dir, output_dir, checkpoint_dir, device, metrics_calculator=None, 
-                evaluation_mode=False, target_modality=None, override_steps=None):
+                evaluation_mode=False, target_modality=None, override_steps=None, 
+                case_index=0, visual_args=None):
     """Process a single case with optional metrics evaluation."""
     case_name = os.path.basename(case_dir)
     print(f"\n=== Processing {case_name} ===")
@@ -620,6 +856,26 @@ def process_case(case_dir, output_dir, checkpoint_dir, device, metrics_calculato
             }
             wandb.log(case_metrics)
         
+        # Create and log visual samples (if enabled and appropriate)
+        should_log_visuals = (
+            evaluation_mode and  # Only in evaluation mode (we have ground truth)
+            visual_args and 
+            visual_args.get('log_visual_samples', False) and
+            (case_index % visual_args.get('visual_sample_frequency', 1) == 0)
+        )
+        
+        if should_log_visuals:
+            log_visual_samples(
+                available_modalities=available_modalities,
+                synthesized=synthesized,
+                target_data=target_data,
+                missing_modality=missing_modality,
+                case_name=case_name,
+                log_to_wandb=True,
+                save_locally=visual_args.get('save_visual_samples', False),
+                output_dir=output_dir
+            )
+        
         # Save result (skip in evaluation mode to avoid overwriting originals)
         if not evaluation_mode:
             save_result(synthesized, case_dir, missing_modality, output_dir)
@@ -665,6 +921,14 @@ def main():
                         help="Custom run name for wandb")
     parser.add_argument("--wandb_tags", nargs="*", default=[],
                         help="Tags for wandb run")
+    
+    # Visual sampling arguments
+    parser.add_argument("--log_visual_samples", action="store_true", default=True,
+                        help="Create and log visual comparison samples to wandb")
+    parser.add_argument("--save_visual_samples", action="store_true",
+                        help="Save visual samples locally as PNG files")
+    parser.add_argument("--visual_sample_frequency", type=int, default=1,
+                        help="Log visual samples every N cases (1=every case)")
     
     args = parser.parse_args()
     
@@ -723,6 +987,10 @@ def main():
         print(f"🎯 Overriding diffusion steps: {args.diffusion_steps}")
     
     print(f"🧠 Enhanced synthesis with BRAIN-MASKED comprehensive metrics")
+    if args.log_visual_samples and args.evaluation_mode:
+        print(f"📸 Visual sampling enabled (frequency: every {args.visual_sample_frequency} case{'s' if args.visual_sample_frequency > 1 else ''})")
+    elif args.evaluation_mode:
+        print(f"📸 Visual sampling disabled")
     
     # Initialize metrics calculator
     metrics_calculator = ComprehensiveMetrics(device) if args.evaluate_metrics else None
@@ -743,12 +1011,21 @@ def main():
         "config/max_cases": args.max_cases or len(case_dirs),
         "config/evaluation_mode": args.evaluation_mode,
         "config/target_modality": args.target_modality or "random",
-        "config/seed": args.seed
+        "config/seed": args.seed,
+        "config/visual_sampling": args.log_visual_samples and args.evaluation_mode,
+        "config/visual_frequency": args.visual_sample_frequency if args.log_visual_samples else 0
     })
     
     # Process cases
     if not args.evaluation_mode:
         os.makedirs(args.output_dir, exist_ok=True)
+    
+    # Prepare visual arguments
+    visual_args = {
+        'log_visual_samples': args.log_visual_samples,
+        'save_visual_samples': args.save_visual_samples,
+        'visual_sample_frequency': args.visual_sample_frequency
+    }
     
     successful = 0
     all_metrics = {modality: [] for modality in MODALITIES}
@@ -777,7 +1054,8 @@ def main():
         
         success, metrics = process_case(
             case_dir, args.output_dir, args.checkpoint_dir, device,
-            metrics_calculator, args.evaluation_mode, args.target_modality, args.diffusion_steps
+            metrics_calculator, args.evaluation_mode, args.target_modality, 
+            args.diffusion_steps, case_index=i, visual_args=visual_args
         )
         
         if success:
@@ -913,6 +1191,12 @@ def main():
     
     # Log final summary to wandb
     wandb.log(final_summary)
+    
+    # Final visual sampling summary
+    if args.log_visual_samples and args.evaluation_mode and successful > 0:
+        visual_cases = successful // args.visual_sample_frequency + (1 if successful % args.visual_sample_frequency > 0 else 0)
+        print(f"\n📸 Visual samples logged for ~{visual_cases} cases (every {args.visual_sample_frequency} case{'s' if args.visual_sample_frequency > 1 else ''})")
+        print(f"   Check wandb 'samples' section for visual comparisons and difference maps")
     
     # Finish wandb run
     wandb.finish()

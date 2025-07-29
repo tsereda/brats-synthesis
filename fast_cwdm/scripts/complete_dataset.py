@@ -1220,7 +1220,6 @@ def main():
     
     # Finish wandb run
     wandb.finish()
-    print(f"🔮 Wandb run completed: {wandb.run.name}")
 
 
 if __name__ == "__main__":

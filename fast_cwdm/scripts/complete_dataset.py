@@ -141,10 +141,10 @@ def load_image(file_path):
     # Normalize using EXACT training function
     img_normalized = clip_and_normalize(img)
     
-    # Preprocess EXACTLY like training (from bratsloader.py __getitem__)
+    # Preprocess like training (from bratsloader.py __getitem__)
     img_tensor = th.zeros(1, 240, 240, 160)
     img_tensor[:, :, :, :155] = th.tensor(img_normalized)
-    img_tensor = img_tensor[:, 8:-8, 8:-8, :]  # ✅ MATCHES training exactly
+    img_tensor = img_tensor[:, 8:-8, 8:-8, :]  # MATCHES training exactly
     
     print(f"  Preprocessed shape: {img_tensor.shape}")
     return img_tensor.float()

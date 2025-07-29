@@ -64,7 +64,7 @@ spec:
           sudo apt-get update && sudo apt-get install -y p7zip-full wget git
           pip install nibabel blobfile wandb batchgenerators simpleITK gdown monai
 
-          git clone -b inf https://github.com/tsereda/brats-synthesis.git ${REPO_PATH}
+          git clone -b seemore https://github.com/tsereda/brats-synthesis.git ${REPO_PATH}
           cd ${REPO_PATH}
 
           7z x /data/ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData.tar.gz

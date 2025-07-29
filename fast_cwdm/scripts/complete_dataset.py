@@ -16,6 +16,7 @@ import torch as th
 import glob
 import sys
 import random
+from PIL import Image
 import re
 import time
 import wandb

@@ -424,9 +424,9 @@ def create_visual_comparison(available_modalities, synthesized, target_data, mis
         buf = io.BytesIO()
         plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
         buf.seek(0)
-        
-        # Create wandb Image
-        wandb_image = wandb.Image(buf, caption=f"{case_name}_slice_{slice_idx}")
+        # Convert to PIL Image first, then to wandb Image
+        pil_image = Image.open(buf)
+        wandb_image = wandb.Image(pil_image, caption=f"{case_name}_slice_{slice_idx}")
         visualizations.append(wandb_image)
         
         plt.close(fig)  # Free memory

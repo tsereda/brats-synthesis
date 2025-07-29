@@ -181,7 +181,7 @@ if [[ $MODE == 'train' ]]; then
       CONTR=$CONTRAST
       echo "Training for modality: $CONTRAST"
       START_TIME=$(date +%s)
-      python scripts/train.py $TRAIN --contr=${CONTR} $COMMON
+      python scripts/train.py $COMMON --contr=${CONTR} --resume_checkpoint="${RESUME_CHECKPOINT}" --resume_step="${RESUME_STEP}"
       END_TIME=$(date +%s)
       ELAPSED=$((END_TIME - START_TIME))
       echo "[TIMING] Training for $CONTRAST completed in $ELAPSED seconds ($((ELAPSED/60)) min $((ELAPSED%60)) sec)"
@@ -190,7 +190,7 @@ if [[ $MODE == 'train' ]]; then
     # single-modality case
     echo "Training single modality: $TRAIN_MODALITY"
     START_TIME=$(date +%s)
-    python scripts/train.py $TRAIN --contr=${CONTR} $COMMON
+    python scripts/train.py $COMMON --contr=${CONTR} --resume_checkpoint="${RESUME_CHECKPOINT}" --resume_step="${RESUME_STEP}"
     END_TIME=$(date +%s)
     ELAPSED=$((END_TIME - START_TIME))
     echo "[TIMING] Training for $TRAIN_MODALITY completed in $ELAPSED seconds ($((ELAPSED/60)) min $((ELAPSED%60)) sec)"

@@ -688,7 +688,7 @@ def main():
             remaining_cases = len(case_dirs) - i
             eta_seconds = avg_time * remaining_cases
             eta_minutes = eta_seconds / 60
-            print(f"\n📊 Progress: {i}/{len(case_dirs)} | Avg: {avg_time:.1f}s/case | ETA: {eta_minutes:.1f} min")
+            print(f"\nProgress: {i}/{len(case_dirs)} | Avg: {avg_time:.1f}s/case | ETA: {eta_minutes:.1f} min")
         
         success, metrics = process_case(
             case_dir, args.output_dir, args.checkpoint_dir, device,
@@ -700,7 +700,7 @@ def main():
             # Track sample times
             if 'sample_time' in metrics:
                 sample_times.append(metrics['sample_time'])
-                print(f"⏱️ Case sample time: {metrics['sample_time']:.2f}s")
+                print(f"⏱Case sample time: {metrics['sample_time']:.2f}s")
             
             # Collect metrics if available
             if metrics:
@@ -741,7 +741,7 @@ def main():
     
     # Print comprehensive metrics summary
     if args.evaluate_metrics and any(all_metrics.values()):
-        print(f"\n=== 🧠 BRAIN-MASKED COMPREHENSIVE METRICS SUMMARY ===")
+        print(f"\n=== METRICS SUMMARY ===")
         for modality, metrics_list in all_metrics.items():
             if metrics_list:
                 print(f"\n{modality.upper()} Synthesis:")
@@ -763,7 +763,7 @@ def main():
                     print(f"  L1:   {avg_metrics['l1']:.6f} ± {std_metrics['l1']:.6f}")
                     print(f"  MSE:  {avg_metrics['mse']:.6f} ± {std_metrics['mse']:.6f}")
                     print(f"  PSNR: {avg_metrics['psnr']:.2f} ± {std_metrics['psnr']:.2f} dB")
-                    print(f"  🧠 SSIM: {avg_metrics['ssim']:.4f} ± {std_metrics['ssim']:.4f} (BRAIN-MASKED)")
+                    print(f"  SSIM: {avg_metrics['ssim']:.4f} ± {std_metrics['ssim']:.4f}")
                 
                 # Brain volume statistics
                 brain_ratios = [m['brain_volume_ratio'] for m in metrics_list if 'brain_volume_ratio' in m]

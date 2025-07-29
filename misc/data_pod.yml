@@ -1,9 +1,7 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: data-pod-brats
-  labels:
-    app: data-pod-brats
+  name: data-pod-brats1
 spec:
   nodeSelector:
     topology.kubernetes.io/region: us-west
@@ -38,8 +36,8 @@ spec:
       volumeMounts:
         - name: workspace
           mountPath: /app
-        - name: data5
-          mountPath: /data5
+        - name: data4
+          mountPath: /data4
         - name: data6
           mountPath: /data6
         - name: shm
@@ -57,9 +55,9 @@ spec:
     - name: workspace
       emptyDir:
         sizeLimit: 50Gi
-    - name: data5
+    - name: data4
       persistentVolumeClaim:
-        claimName: brats2025-5
+        claimName: brats2025-4
     - name: data6
       persistentVolumeClaim:
         claimName: brats2025-6

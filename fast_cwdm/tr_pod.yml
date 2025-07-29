@@ -67,7 +67,7 @@ spec:
       command: ["/bin/bash", "-c"]
       args:
         - |
-          git clone -seemore https://github.com/tsereda/brats-synthesis.git ${REPO_PATH}
+          git clone -b seemore https://github.com/tsereda/brats-synthesis.git ${REPO_PATH}
           cd ${REPO_PATH}
 
           sudo apt-get update && sudo apt-get install -y p7zip-full wget git

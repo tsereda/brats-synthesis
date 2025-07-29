@@ -16,7 +16,6 @@ import torch as th
 import glob
 import sys
 import random
-from PIL import Image
 import re
 import time
 import wandb
@@ -35,6 +34,11 @@ from monai.metrics import SSIMMetric, PSNRMetric
 import torch.nn.functional as F
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle
+try:
+    from PIL import Image
+except ImportError:
+    print("Warning: PIL not available. Visual sampling will be disabled.")
+    Image = None
 
 # Constants
 MODALITIES = ['t1n', 't1c', 't2w', 't2f']
@@ -334,6 +338,11 @@ def create_model_args(sample_schedule="direct", diffusion_steps=1000):
 def create_visual_comparison(available_modalities, synthesized, target_data, missing_modality, case_name, slice_indices=None):
     """Create visual comparison of available modalities, synthesized, and ground truth."""
     
+    # Check if PIL is available
+    if Image is None:
+        print("  Warning: PIL not available, skipping visual comparison")
+        return []
+    
     # Convert tensors to numpy for visualization
     if isinstance(synthesized, th.Tensor):
         synthesized_np = synthesized.detach().cpu().numpy()
@@ -420,12 +429,14 @@ def create_visual_comparison(available_modalities, synthesized, target_data, mis
         
         plt.tight_layout()
         
-        # Convert to wandb Image
+        # Convert to wandb Image using PIL
         import io
+        
         buf = io.BytesIO()
         plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
         buf.seek(0)
-        # Convert to PIL Image first, then to wandb Image
+        
+        # Convert to PIL Image, then to wandb Image
         pil_image = Image.open(buf)
         wandb_image = wandb.Image(pil_image, caption=f"{case_name}_slice_{slice_idx}")
         visualizations.append(wandb_image)
@@ -437,6 +448,11 @@ def create_visual_comparison(available_modalities, synthesized, target_data, mis
 
 def create_difference_maps(synthesized, target_data, missing_modality, case_name, slice_indices=None):
     """Create difference maps between synthesized and ground truth."""
+    
+    # Check if PIL is available
+    if Image is None:
+        print("  Warning: PIL not available, skipping difference maps")
+        return []
     
     # Convert to numpy
     if isinstance(synthesized, th.Tensor):
@@ -496,13 +512,16 @@ def create_difference_maps(synthesized, target_data, missing_modality, case_name
         
         plt.tight_layout()
         
-        # Convert to wandb Image
+        # Convert to wandb Image using PIL
         import io
+        
         buf = io.BytesIO()
         plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
         buf.seek(0)
         
-        wandb_image = wandb.Image(buf, caption=f"{case_name}_{missing_modality}_diff_slice_{slice_idx}")
+        # Convert to PIL Image, then to wandb Image
+        pil_image = Image.open(buf)
+        wandb_image = wandb.Image(pil_image, caption=f"{case_name}_{missing_modality}_diff_slice_{slice_idx}")
         visualizations.append(wandb_image)
         
         plt.close(fig)

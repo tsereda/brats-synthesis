@@ -5,6 +5,8 @@ SAMPLING_STRATEGY=""
 TIMESTEPS=""
 MODE="train"
 TRAIN_MODALITY="t1n"
+RESUME_CHECKPOINT=""
+RESUME_STEP=""
 while [[ $# -gt 0 ]]; do
   case $1 in
     --mode)
@@ -135,6 +137,8 @@ COMMON="
 "
 
 TRAIN="
+--resume_checkpoint=${RESUME_CHECKPOINT}
+--resume_step=${RESUME_STEP}
 --lr_anneal_steps=74500  
 --data_dir=${DATA_DIR}
 --resume_checkpoint=

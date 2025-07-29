@@ -25,6 +25,14 @@ while [[ $# -gt 0 ]]; do
       TRAIN_MODALITY="$2"
       shift 2
       ;;
+    --resume_checkpoint)
+      RESUME_CHECKPOINT="$2"
+      shift 2
+      ;;
+    --resume_step)
+      RESUME_STEP="$2"
+      shift 2
+      ;;
     --help)
       echo "Usage: $0 [--mode MODE] [--sampling-strategy STRATEGY] [--timesteps STEPS] [--train_modality MODALITY]"
       echo "  --mode: train, sample, auto (default: train)"
@@ -141,8 +149,6 @@ TRAIN="
 --resume_step=${RESUME_STEP}
 --lr_anneal_steps=74500  
 --data_dir=${DATA_DIR}
---resume_checkpoint=
---resume_step=0
 --image_size=${IMAGE_SIZE}
 --use_fp16=False
 --lr=1e-5

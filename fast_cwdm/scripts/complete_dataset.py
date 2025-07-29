@@ -93,10 +93,10 @@ class ComprehensiveMetrics:
             elif target.dim() == 4:
                 target = target.unsqueeze(1)
             
-            # 🧠 CREATE BRAIN MASK FROM TARGET (GROUND TRUTH)
+            # CREATE BRAIN MASK FROM TARGET (GROUND TRUTH)
             brain_mask = create_brain_mask_from_target(target, threshold=0.01)
             
-            # 🧠 APPLY MASK TO BOTH PREDICTED AND TARGET
+            # APPLY MASK TO BOTH PREDICTED AND TARGET
             predicted_masked = predicted * brain_mask
             target_masked = target * brain_mask
             
@@ -673,7 +673,7 @@ def synthesize_modality(available_modalities, missing_modality, checkpoint_path,
     print(f"Conditioning shape: {cond.shape}")
     
     # Sample using p_sample_loop_progressive (correct method for Fast-DDPM)
-    print(f"🚀 Running {diffusion.num_timesteps}-step sampling...")
+    print(f"Running {diffusion.num_timesteps}-step sampling...")
     
     # Start timing
     sample_start_time = time.time()
@@ -697,7 +697,7 @@ def synthesize_modality(available_modalities, missing_modality, checkpoint_path,
     sample_end_time = time.time()
     sample_duration = sample_end_time - sample_start_time
     
-    print(f"⏱️ Sampling completed in {sample_duration:.2f} seconds ({sample_duration/60:.2f} minutes)")
+    print(f"⏱Sampling completed in {sample_duration:.2f} seconds ({sample_duration/60:.2f} minutes)")
     
     # Return timing info along with other data
     timing_info = {
@@ -744,7 +744,7 @@ def synthesize_modality(available_modalities, missing_modality, checkpoint_path,
     # Calculate comprehensive metrics if target is provided
     metrics = {}
     if metrics_calculator is not None and target_data is not None:
-        print(f"🧠 Calculating brain-masked metrics...")
+        print(f"Calculating brain-masked metrics...")
         metrics = metrics_calculator.calculate_metrics(
             spatial_sample, target_data, f"{missing_modality}_synthesis"
         )
@@ -900,7 +900,7 @@ def process_case(case_dir, output_dir, checkpoint_dir, device, metrics_calculato
         if not evaluation_mode:
             save_result(synthesized, case_dir, missing_modality, output_dir)
         else:
-            print(f"📊 Evaluation mode: skipping file save for {case_name}")
+            print(f"Evaluation mode: skipping file save for {case_name}")
         
         print(f"✅ Successfully processed {case_name}")
         return True, metrics
@@ -994,19 +994,19 @@ def main():
     # --- End wandb initialization ---
     
     if args.evaluation_mode:
-        print(f"🧪 EVALUATION MODE: Using complete dataset with artificial exclusion")
+        print(f"EVALUATION MODE: Using complete dataset with artificial exclusion")
         print(f"   Target modality: {args.target_modality or 'random'}")
         print(f"   Random seed: {args.seed}")
         random.seed(args.seed)  # For reproducible evaluation
         # Force metrics calculation in evaluation mode
         args.evaluate_metrics = True
     else:
-        print(f"🔧 SYNTHESIS MODE: Using incomplete dataset")
+        print(f"SYNTHESIS MODE: Using incomplete dataset")
     
     if args.diffusion_steps:
-        print(f"🎯 Overriding diffusion steps: {args.diffusion_steps}")
+        print(f"Overriding diffusion steps: {args.diffusion_steps}")
     
-    print(f"🧠 Enhanced synthesis with BRAIN-MASKED comprehensive metrics")
+    print(f"Synthesis  metrics")
     if args.log_visual_samples and args.evaluation_mode:
         print(f"📸 Visual sampling enabled (frequency: every {args.visual_sample_frequency} case{'s' if args.visual_sample_frequency > 1 else ''})")
     elif args.evaluation_mode:

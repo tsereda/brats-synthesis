@@ -69,7 +69,8 @@ spec:
         - |
           git clone -b seemore https://github.com/tsereda/brats-synthesis.git ${REPO_PATH}
           cd ${REPO_PATH}
-
+          bash fast_cwdm/run.sh --sampling-strategy sampled --timesteps 100 --mode train --train_modality t2w --resume_checkpoint=./t1c/brats_t1c_074500_sampled_100.pt --resume_step=74500
+              
           sudo apt-get update && sudo apt-get install -y p7zip-full wget git
 
           # Create target directories

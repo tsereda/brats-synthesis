@@ -1,4 +1,5 @@
 #!/bin/bash
+set -x
 
 # Parse command line arguments
 SAMPLING_STRATEGY=""

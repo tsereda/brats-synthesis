@@ -104,10 +104,14 @@ spec:
               rm -rf datasets/BRATS2023/training/BraTS-MET-00232-000/
               cp /data/BraTSChekpoints.zip BraTSChekpoints.zip 
               unzip BraTSChekpoints.zip 
+              ls BraTSCheckpoints/t2w
+              ls BraTSCheckpoints/t2f
+              ls BraTSCheckpoints/t1c
+              ls BraTSCheckpoints/t1n
               #python scripts/check_data_integrity.py --data_dir datasets/BRATS2023/training
-              cp -r BraTSCheckpoints/t1c ./t1c
+              cp -r BraTSCheckpoints/t2w ./t2w
               #MODALITIES=("t1n" "t1c" "t2w" "t2f")
-              bash run.sh --sampling-strategy sampled --timesteps 100 --mode train --train_modality t2w --resume_checkpoint ./t1c/brats_t1c_074500_sampled_100.pt --resume_step 74500
+              bash run.sh --sampling-strategy sampled --timesteps 100 --mode train --train_modality t2w --resume_checkpoint ./t2w/brats_*.pt --resume_step 74500
               ls -la /data/checkpoints/
 
               echo "Job completed successfully"

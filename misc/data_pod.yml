@@ -24,8 +24,8 @@ spec:
       command: ["/bin/bash", "-c"]
       args:
         - |
-         
-          pip install --upgrade synapseclient 
+          sudo apt update && sudo apt install zip
+          # pip install --upgrade synapseclient 
 
           # run the below in kubectl exec -- bash s
           # synapse get syn51669979  

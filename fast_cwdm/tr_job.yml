@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: 5-fast-cwdm-t1n
+  name: 1-fast-cwdm-t1n
 spec:
   backoffLimit: 0
   template:
@@ -80,7 +80,7 @@ spec:
               echo "Training patients: $(ls datasets/BRATS2023/training/ | wc -l)"
               echo "Validation patients: $(ls datasets/BRATS2023/validation/ | wc -l)"
 
-              pip install pyyaml torch tqdm numpy nibabel wandb matplotlib blobfile tensorboard
+              pip install pyyaml torch tqdm numpy nibabel wandb matplotlib blobfile tensorboard monai
               
               python -c "import wandb; print(f'W&B version: {wandb.__version__}')"
               python -c "import torch; print(f'GPUs available: {torch.cuda.device_count()}')"
@@ -102,8 +102,8 @@ spec:
               mv datasets/ fast_cwdm/
               cd fast_cwdm
               rm -rf datasets/BRATS2023/training/BraTS-MET-00232-000/
-              cp /data/BraTSChekpoints.zip BraTSChekpoints.zip 
-              unzip BraTSChekpoints.zip 
+              cp /data/200kCheckpoints.zip 200kCheckpoints.zip 
+              unzip 200kCheckpoints.zip 
               ls BraTSCheckpoints/t1n
               #python scripts/check_data_integrity.py --data_dir datasets/BRATS2023/training
               cp -r BraTSCheckpoints/t1n ./t1n
@@ -119,6 +119,7 @@ spec:
               fi
               
               #MODALITIES=("t1n" "t1c" "t2w" "t2f")
+              ls
               bash run.sh --sampling-strategy sampled --timesteps 100 --mode train --train_modality t1n --resume_checkpoint ./t1n/brats_*.pt --resume_step 74500
               ls -la /data/checkpoints/
 
@@ -148,7 +149,7 @@ spec:
             sizeLimit: 50Gi
         - name: data
           persistentVolumeClaim:
-            claimName: brats2025-5
+            claimName: brats2025-1
         - name: shm
           emptyDir:
             medium: Memory

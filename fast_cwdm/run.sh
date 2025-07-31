@@ -145,7 +145,7 @@ COMMON=(
 )
 
 TRAIN=(
---lr_anneal_steps=200000
+--lr_anneal_steps=201000
 --data_dir=${DATA_DIR}
 --image_size=${IMAGE_SIZE}
 --use_fp16=False

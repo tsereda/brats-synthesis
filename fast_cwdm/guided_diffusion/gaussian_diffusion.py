@@ -155,8 +155,8 @@ class GaussianDiffusion:
         rescale_timesteps=False,
         mode='default',
         loss_level='image',
-        ssim_loss_weight=0.3,  # NEW: Weight for SSIM in hybrid loss
-        mse_loss_weight=0.7,   # NEW: Weight for MSE in hybrid loss
+        ssim_loss_weight=0.6,  # NEW: Weight for SSIM in hybrid loss
+        mse_loss_weight=0.4,   # NEW: Weight for MSE in hybrid loss
     ):
         self.model_mean_type = model_mean_type
         self.model_var_type = model_var_type

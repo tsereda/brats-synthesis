@@ -36,12 +36,14 @@ def get_named_beta_schedule(schedule_name, num_diffusion_timesteps, sample_sched
     import numpy as np
     import math
     if schedule_name == "linear":
+        #Default cWDM
         if sample_schedule == "direct":
             scale = 1000 / num_diffusion_timesteps
             beta_start = scale * 0.0001
             beta_end = scale * 0.02
             print(f"[BETA SCHEDULE] [direct] {num_diffusion_timesteps} steps, Beta range: {beta_start:.6f} → {beta_end:.6f}")
             return np.linspace(beta_start, beta_end, num_diffusion_timesteps, dtype=np.float64)
+        #Fast-cWDM
         elif sample_schedule == "sampled":
             print(f"[BETA SCHEDULE] [sampled] Sampling {num_diffusion_timesteps} steps from 1000-step curve")
             full_betas = np.linspace(0.0001, 0.02, 1000, dtype=np.float64)
@@ -54,7 +56,7 @@ def get_named_beta_schedule(schedule_name, num_diffusion_timesteps, sample_sched
             alphas = sampled_alphas_cumprod / alphas_cumprod_prev
             betas = 1.0 - alphas
             betas = np.clip(betas, 0.0001, 0.999)
-            print(f"[BETA SCHEDULE] ✅ Sampled betas range: {betas.min():.6f} → {betas.max():.6f}")
+            print(f"[BETA SCHEDULE] Sampled betas range: {betas.min():.6f} → {betas.max():.6f}")
             return betas
         else:
             raise NotImplementedError(f"Unknown sample_schedule: {sample_schedule}")

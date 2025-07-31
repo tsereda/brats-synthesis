@@ -897,10 +897,12 @@ def process_case(case_dir, output_dir, checkpoint_dir, device, metrics_calculato
             )
         
         # Save result (skip in evaluation mode to avoid overwriting originals)
-        if not evaluation_mode:
-            save_result(synthesized, case_dir, missing_modality, output_dir)
-        else:
-            print(f"Evaluation mode: skipping file save for {case_name}")
+        # if not evaluation_mode:
+        #     save_result(synthesized, case_dir, missing_modality, output_dir)
+        # else:
+        #     print(f"Evaluation mode: skipping file save for {case_name}")
+        save_result(synthesized, case_dir, missing_modality, output_dir)
+        print(f"overwriting file save for {case_name}")
         
         print(f"✅ Successfully processed {case_name}")
         return True, metrics

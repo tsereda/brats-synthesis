@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: 6-fast-cwdm
+  name: 5-fast-cwdm
 spec:
   nodeSelector:
     #topology.kubernetes.io/region: us-west
@@ -67,33 +67,38 @@ spec:
       command: ["/bin/bash", "-c"]
       args:
         - |
-          git clone -b seemore https://github.com/tsereda/brats-synthesis.git ${REPO_PATH}
-          cd ${REPO_PATH}
-          bash fast_cwdm/run.sh --sampling-strategy sampled --timesteps 100 --mode train --train_modality t2w --resume_checkpoint=./t1c/brats_t1c_074500_sampled_100.pt --resume_step=74500
-              
-          sudo apt-get update && sudo apt-get install -y p7zip-full wget git
+          sudo rm -r /data/checkpoints/
+          sudo mkdir /data/checkpoints/
+          sudo chmod 777 /data/checkpoints/
 
+          git clone -b ssim-loss https://github.com/tsereda/brats-synthesis.git ${REPO_PATH}
+          cd ${REPO_PATH}
+          
+          sudo apt-get update && sudo apt-get install -y p7zip-full wget git
+          
           # Create target directories
-          sudo mkdir -p /data/checkpoints
-          sudo mkdir -p /data/results
           mkdir -p datasets/BRATS2023/training
           mkdir -p datasets/BRATS2023/validation
+          
+          ls -la /data/
 
-          # Extract and move to correct locations  
-          7z x /data/ASNR-MICCAI-BraTS2023-GLI-MET-TrainingData.zip
+          7z x /data/ASNR-MICCAI-BraTS2023-GLI-MET-TrainingData.tar.gz
+          7z x /data/ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData.tar.gz
 
-          # Move to expected locations
+          7z x ASNR-MICCAI-BraTS2023-GLI-MET-TrainingData.tar
+          7z x ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData.tar
+
           mv ASNR-MICCAI-BraTS2023-GLI-MET-TrainingData/* datasets/BRATS2023/training/
+          mv ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData/* datasets/BRATS2023/validation/
 
-          # Clean up any hidden files that might cause issues
           find datasets/BRATS2023/training -name ".*" -delete 2>/dev/null || true
           find datasets/BRATS2023/validation -name ".*" -delete 2>/dev/null || true
 
           echo "Training patients: $(ls datasets/BRATS2023/training/ | wc -l)"
           echo "Validation patients: $(ls datasets/BRATS2023/validation/ | wc -l)"
 
-          pip install pyyaml torch tqdm numpy nibabel wandb matplotlib blobfile tensorboard
-
+          pip install pyyaml torch tqdm numpy nibabel wandb matplotlib blobfile tensorboard monai
+          
           python -c "import wandb; print(f'W&B version: {wandb.__version__}')"
           python -c "import torch; print(f'GPUs available: {torch.cuda.device_count()}')"
 
@@ -113,11 +118,26 @@ spec:
           
           mv datasets/ fast_cwdm/
           cd fast_cwdm
-          bash run.sh --sampling-strategy direct --timesteps 1000 --mode train --train_modality all
-
+          rm -rf datasets/BRATS2023/training/BraTS-MET-00232-000/
+          cp /data/BraTSChekpoints.zip BraTSChekpoints.zip 
+          unzip BraTSChekpoints.zip 
+          ls BraTSCheckpoints/t1n
+          #python scripts/check_data_integrity.py --data_dir datasets/BRATS2023/training
+          cp -r BraTSCheckpoints/t1n ./t1n
+          
+          # Rename optimizer checkpoint to match expected resume step
+          echo "Renaming optimizer checkpoint..."
+          if ls ./t1n/opt*.pt 1> /dev/null 2>&1; then
+            OLD_OPT=$(ls ./t1n/opt*.pt | head -1)
+            mv "$OLD_OPT" "./t1n/opt074500.pt"
+            echo "Renamed $OLD_OPT to ./t1n/opt074500.pt"
+          else
+            echo "No optimizer checkpoint found to rename"
+          fi
+          
+          #MODALITIES=("t1n" "t1c" "t2w" "t2f")
+          bash run.sh --sampling-strategy sampled --timesteps 100 --mode train --train_modality t1n --resume_checkpoint ./t1n/brats_*.pt --resume_step 74500
           ls -la /data/checkpoints/
-
-          echo "Job completed successfully"
 
           tail -f /dev/null
      
@@ -145,7 +165,7 @@ spec:
         sizeLimit: 50Gi
     - name: data
       persistentVolumeClaim:
-        claimName: brats2025-6
+        claimName: brats2025-5
     - name: shm
       emptyDir:
         medium: Memory

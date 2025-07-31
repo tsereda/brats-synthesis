@@ -31,96 +31,96 @@ def visualize(img):
 
 class TrainLoop:
     def __init__(
-        self,
-        *,
-        model,
-        diffusion,
-        data,
-        batch_size,
-        in_channels,
-        image_size,
-        microbatch,
-        lr,
-        ema_rate,
-        log_interval,
-        contr,
-        save_interval,
-        resume_checkpoint,
-        resume_step,
-        use_fp16=False,
-        fp16_scale_growth=1e-3,
-        schedule_sampler=None,
-        weight_decay=0.0,
-        lr_anneal_steps=0,
-        dataset='brats',
-        summary_writer=None,
-        mode='default',
-        loss_level='image',
-        sample_schedule='direct',
-        diffusion_steps=1000,
-    ):
-        self.summary_writer = summary_writer
-        self.mode = mode
-        self.model = model
-        self.diffusion = diffusion
-        self.datal = data
-        self.dataset = dataset
-        self.iterdatal = iter(data)
-        self.batch_size = batch_size
-        self.in_channels = in_channels
-        self.image_size = image_size
-        self.contr = contr
-        self.microbatch = microbatch if microbatch > 0 else batch_size
-        self.lr = lr
-        self.ema_rate = (
-            [ema_rate]
-            if isinstance(ema_rate, float)
-            else [float(x) for x in ema_rate.split(",")]
-        )
-        self.log_interval = log_interval
-        self.save_interval = save_interval
-        self.resume_checkpoint = resume_checkpoint
-        self.use_fp16 = use_fp16
-        if self.use_fp16:
-            self.grad_scaler = amp.GradScaler()
-        else:
-            self.grad_scaler = amp.GradScaler(enabled=False)
-        self.schedule_sampler = schedule_sampler or UniformSampler(diffusion)
-        self.weight_decay = weight_decay
-        self.lr_anneal_steps = lr_anneal_steps
-        self.dwt = DWT_3D('haar')
-        self.idwt = IDWT_3D('haar')
-        self.loss_level = loss_level
-        self.step = 1
-        self.resume_step = resume_step
-        self.global_batch = self.batch_size * dist.get_world_size()
-        self.sync_cuda = th.cuda.is_available()
-        self.sample_schedule = sample_schedule
-        self.diffusion_steps = diffusion_steps
-        
-        # MODIFIED: Track best SSIM instead of best loss
-        self.best_ssims = {}  # Will store best SSIM for each modality (higher is better)
-        self.best_checkpoints = {}  # Will store path to best checkpoint for each modality
-        self.checkpoint_dir = os.path.join(get_blob_logdir(), 'checkpoints')
-        os.makedirs(self.checkpoint_dir, exist_ok=True)
-        
-        # Load existing best SSIMs if resuming
-        self._load_best_ssims()
-        
-        # MODIFIED: Move SSIM metric to correct device after diffusion is set up
-        if hasattr(self.diffusion, 'ssim_metric'):
-            self.diffusion.ssim_metric = self.diffusion.ssim_metric.to(dist_util.dev())
-            print(f"✅ SSIM metric moved to device: {dist_util.dev()}")
-        
-        self._load_and_sync_parameters()
-        self.opt = AdamW(self.model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
-        if self.resume_step:
-            print("Resume Step: " + str(self.resume_step))
-            self._load_optimizer_state()
-        if not th.cuda.is_available():
-            logger.warn(
-                "Training requires CUDA. "
+            self,
+            *,
+            model,
+            diffusion,
+            data,
+            batch_size,
+            in_channels,
+            image_size,
+            microbatch,
+            lr,
+            ema_rate,
+            log_interval,
+            contr,
+            save_interval,
+            resume_checkpoint,
+            resume_step,
+            use_fp16=False,
+            fp16_scale_growth=1e-3,
+            schedule_sampler=None,
+            weight_decay=0.0,
+            lr_anneal_steps=0,
+            dataset='brats',
+            summary_writer=None,
+            mode='default',
+            loss_level='image',
+            sample_schedule='direct',
+            diffusion_steps=1000,
+        ):
+            self.summary_writer = summary_writer
+            self.mode = mode
+            self.model = model
+            self.diffusion = diffusion
+            self.datal = data
+            self.dataset = dataset
+            self.iterdatal = iter(data)
+            self.batch_size = batch_size
+            self.in_channels = in_channels
+            self.image_size = image_size
+            self.contr = contr
+            self.microbatch = microbatch if microbatch > 0 else batch_size
+            self.lr = lr
+            self.ema_rate = (
+                [ema_rate]
+                if isinstance(ema_rate, float)
+                else [float(x) for x in ema_rate.split(",")]
             )
+            self.log_interval = log_interval
+            self.save_interval = save_interval
+            self.resume_checkpoint = resume_checkpoint
+            self.use_fp16 = use_fp16
+            if self.use_fp16:
+                self.grad_scaler = amp.GradScaler()
+            else:
+                self.grad_scaler = amp.GradScaler(enabled=False)
+            self.schedule_sampler = schedule_sampler or UniformSampler(diffusion)
+            self.weight_decay = weight_decay
+            self.lr_anneal_steps = lr_anneal_steps
+            self.dwt = DWT_3D('haar')
+            self.idwt = IDWT_3D('haar')
+            self.loss_level = loss_level
+            self.step = 1
+            self.resume_step = resume_step
+            self.global_batch = self.batch_size * dist.get_world_size()
+            self.sync_cuda = th.cuda.is_available()
+            self.sample_schedule = sample_schedule
+            self.diffusion_steps = diffusion_steps
+            
+            # MODIFIED: Track best SSIM instead of best loss
+            self.best_ssims = {}  # Will store best SSIM for each modality (higher is better)
+            self.best_checkpoints = {}  # Will store path to best checkpoint for each modality
+            self.checkpoint_dir = os.path.join(get_blob_logdir(), 'checkpoints')
+            os.makedirs(self.checkpoint_dir, exist_ok=True)
+            
+            # Load existing best SSIMs if resuming
+            self._load_best_ssims()
+            
+            # FIXED: MONAI SSIMMetric doesn't need to be moved to device
+            # The metric operates on tensors that are already on the correct device
+            if hasattr(self.diffusion, 'ssim_metric'):
+                print(f"✅ SSIM metric available and ready to use")
+            
+            self._load_and_sync_parameters()
+            self.opt = AdamW(self.model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
+            if self.resume_step:
+                print("Resume Step: " + str(self.resume_step))
+                self._load_optimizer_state()
+            if not th.cuda.is_available():
+                logger.warn(
+                    "Training requires CUDA. "
+                )
 
     def _load_best_ssims(self):
         """Load best SSIMs from file if it exists"""

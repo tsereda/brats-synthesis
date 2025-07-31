@@ -23,6 +23,9 @@ from scipy.interpolate import interp1d
 
 from fast_cwdm.DWT_IDWT.DWT_IDWT_layer import DWT_3D, IDWT_3D
 
+# SSIM import for loss calculation
+from monai.metrics import SSIMMetric
+
 dwt = DWT_3D('haar')
 idwt = IDWT_3D('haar')
 
@@ -151,7 +154,9 @@ class GaussianDiffusion:
         loss_type,
         rescale_timesteps=False,
         mode='default',
-        loss_level='image'
+        loss_level='image',
+        ssim_loss_weight=0.3,  # NEW: Weight for SSIM in hybrid loss
+        mse_loss_weight=0.7,   # NEW: Weight for MSE in hybrid loss
     ):
         self.model_mean_type = model_mean_type
         self.model_var_type = model_var_type
@@ -159,6 +164,20 @@ class GaussianDiffusion:
         self.rescale_timesteps = rescale_timesteps
         self.mode = mode
         self.loss_level=loss_level
+        
+        # NEW: SSIM loss configuration
+        self.ssim_loss_weight = ssim_loss_weight
+        self.mse_loss_weight = mse_loss_weight
+        
+        # NEW: Initialize SSIM metric for wavelet domain (will be moved to device later)
+        self.ssim_metric = SSIMMetric(
+            spatial_dims=3,
+            data_range=1.0,  # Confirmed [0,1] range from bratsloader
+            win_size=7,      # Smaller window for medical images
+            k1=0.01,
+            k2=0.03
+        )
+        
         # Use float64 for accuracy.
         betas = np.array(betas, dtype=np.float64)
         self.betas = betas
@@ -174,6 +193,8 @@ class GaussianDiffusion:
         print(f"[DIFFUSION] Alpha_cumprod range: {self.alphas_cumprod.min():.6f} → {self.alphas_cumprod.max():.6f}")
         print(f"[DIFFUSION] First 3 α_cumprod: {self.alphas_cumprod[:3]}")
         print(f"[DIFFUSION] Last 3 α_cumprod: {self.alphas_cumprod[-3:]}")
+        print(f"[DIFFUSION] SSIM Loss Weight: {self.ssim_loss_weight}")
+        print(f"[DIFFUSION] MSE Loss Weight: {self.mse_loss_weight}")
         if (alphas < 0).any():
             print(f"[DIFFUSION] 💥 CRITICAL: Found negative alphas! (beta > 1)")
             print(f"[DIFFUSION] Negative alpha positions: {np.where(alphas < 0)[0]}")
@@ -1087,6 +1108,8 @@ class GaussianDiffusion:
                         mode='default', contr='t1n'):
         """
         Compute training losses for a single timestep.
+        MODIFIED: Now includes differentiable SSIM loss for BRATS challenge optimization.
+        
         :param model: the model to evaluate loss on.
         :param x_start: the [N x C x ...] tensor of inputs - original image resolution.
         :param t: a batch of timestep indices.
@@ -1152,7 +1175,7 @@ class GaussianDiffusion:
 
         model_output = model(x_t, self._scale_timesteps(t), **model_kwargs)  # Model outputs denoised wavelet subbands
 
-        # Inverse wavelet transform the model output
+        # Inverse wavelet transform the model output for spatial domain visualization
         B, _, H, W, D = model_output.size()
         model_output_idwt = idwt(model_output[:, 0, :, :, :].view(B, 1, H, W, D) * 3.,
                                  model_output[:, 1, :, :, :].view(B, 1, H, W, D),
@@ -1163,7 +1186,40 @@ class GaussianDiffusion:
                                  model_output[:, 6, :, :, :].view(B, 1, H, W, D),
                                  model_output[:, 7, :, :, :].view(B, 1, H, W, D))
 
-        terms = {"mse_wav": th.mean(mean_flat((x_start_dwt - model_output) ** 2), dim=0)}
+        # ========== NEW: HYBRID MSE + SSIM LOSS FOR BRATS CHALLENGE ==========
+        
+        # Calculate MSE loss (for training stability)
+        mse_loss = th.mean(mean_flat((x_start_dwt - model_output) ** 2))
+        
+        # Calculate SSIM loss in wavelet domain (for challenge performance)
+        try:
+            # SSIM on wavelet coefficients - DIFFERENTIABLE for gradients
+            ssim_score = self.ssim_metric(
+                y_pred=model_output.contiguous(),      # Model prediction [B, 8, H, W, D]
+                y=x_start_dwt.contiguous()            # Ground truth [B, 8, H, W, D]
+            ).mean()  # Keep as tensor for gradients
+            
+            # Convert SSIM to loss (1 - SSIM, so lower is better)
+            ssim_loss = 1.0 - ssim_score
+            
+        except Exception as e:
+            print(f"SSIM calculation failed: {e}")
+            ssim_score = th.tensor(0.0, device=mse_loss.device)  # Fallback
+            ssim_loss = th.tensor(1.0, device=mse_loss.device)   # Worst SSIM loss
+        
+        # Hybrid loss: combine MSE (stability) + SSIM (challenge performance)
+        hybrid_loss = self.mse_loss_weight * mse_loss + self.ssim_loss_weight * ssim_loss
+        
+        # ========== END HYBRID LOSS ==========
+
+        # Return comprehensive terms for logging and training
+        terms = {
+            "mse_wav": th.mean(mean_flat((x_start_dwt - model_output) ** 2), dim=0),  # Per-channel MSE for logging
+            "mse_loss": mse_loss.item(),           # Scalar MSE for logging
+            "ssim_wav": ssim_score.item(),         # Scalar SSIM for logging  
+            "ssim_loss": ssim_loss.item(),         # Scalar SSIM loss for logging
+            "hybrid_loss": hybrid_loss             # Differentiable hybrid loss for training
+        }
 
         return terms, model_output, model_output_idwt
 

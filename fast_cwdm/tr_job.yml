@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: 4-fast-cwdm-t1n
+  name: 5-fast-cwdm-t1n
 spec:
   backoffLimit: 0
   template:
@@ -54,7 +54,7 @@ spec:
               sudo mkdir /data/checkpoints/
               sudo chmod 777 /data/checkpoints/
 
-              git clone -b seemore https://github.com/tsereda/brats-synthesis.git ${REPO_PATH}
+              git clone -b ssim-loss https://github.com/tsereda/brats-synthesis.git ${REPO_PATH}
               cd ${REPO_PATH}
               
               sudo apt-get update && sudo apt-get install -y p7zip-full wget git
@@ -148,7 +148,7 @@ spec:
             sizeLimit: 50Gi
         - name: data
           persistentVolumeClaim:
-            claimName: brats2025-4
+            claimName: brats2025-5
         - name: shm
           emptyDir:
             medium: Memory

@@ -98,14 +98,19 @@ class TrainLoop:
         self.sample_schedule = sample_schedule
         self.diffusion_steps = diffusion_steps
         
-        # NEW: Track best loss and checkpoint for each modality
-        self.best_losses = {}  # Will store best loss for each modality
+        # MODIFIED: Track best SSIM instead of best loss
+        self.best_ssims = {}  # Will store best SSIM for each modality (higher is better)
         self.best_checkpoints = {}  # Will store path to best checkpoint for each modality
         self.checkpoint_dir = os.path.join(get_blob_logdir(), 'checkpoints')
         os.makedirs(self.checkpoint_dir, exist_ok=True)
         
-        # Load existing best losses if resuming
-        self._load_best_losses()
+        # Load existing best SSIMs if resuming
+        self._load_best_ssims()
+        
+        # MODIFIED: Move SSIM metric to correct device after diffusion is set up
+        if hasattr(self.diffusion, 'ssim_metric'):
+            self.diffusion.ssim_metric = self.diffusion.ssim_metric.to(dist_util.dev())
+            print(f"✅ SSIM metric moved to device: {dist_util.dev()}")
         
         self._load_and_sync_parameters()
         self.opt = AdamW(self.model.parameters(), lr=self.lr, weight_decay=self.weight_decay)
@@ -117,32 +122,32 @@ class TrainLoop:
                 "Training requires CUDA. "
             )
 
-    def _load_best_losses(self):
-        """Load best losses from file if it exists"""
-        best_losses_file = os.path.join(self.checkpoint_dir, 'best_losses.txt')
-        if os.path.exists(best_losses_file):
+    def _load_best_ssims(self):
+        """Load best SSIMs from file if it exists"""
+        best_ssims_file = os.path.join(self.checkpoint_dir, 'best_ssims.txt')
+        if os.path.exists(best_ssims_file):
             try:
-                with open(best_losses_file, 'r') as f:
+                with open(best_ssims_file, 'r') as f:
                     for line in f:
                         if line.strip():
-                            modality, loss_str = line.strip().split(':')
-                            self.best_losses[modality] = float(loss_str)
-                print(f"Loaded best losses: {self.best_losses}")
+                            modality, ssim_str = line.strip().split(':')
+                            self.best_ssims[modality] = float(ssim_str)
+                print(f"Loaded best SSIMs: {self.best_ssims}")
             except Exception as e:
-                print(f"Error loading best losses: {e}")
-                self.best_losses = {}
+                print(f"Error loading best SSIMs: {e}")
+                self.best_ssims = {}
         else:
-            self.best_losses = {}
+            self.best_ssims = {}
 
-    def _save_best_losses(self):
-        """Save best losses to file"""
-        best_losses_file = os.path.join(self.checkpoint_dir, 'best_losses.txt')
+    def _save_best_ssims(self):
+        """Save best SSIMs to file"""
+        best_ssims_file = os.path.join(self.checkpoint_dir, 'best_ssims.txt')
         try:
-            with open(best_losses_file, 'w') as f:
-                for modality, loss in self.best_losses.items():
-                    f.write(f"{modality}:{loss}\n")
+            with open(best_ssims_file, 'w') as f:
+                for modality, ssim in self.best_ssims.items():
+                    f.write(f"{modality}:{ssim}\n")
         except Exception as e:
-            print(f"Error saving best losses: {e}")
+            print(f"Error saving best SSIMs: {e}")
 
     def _load_and_sync_parameters(self):
         resume_checkpoint = find_resume_checkpoint() or self.resume_checkpoint
@@ -209,7 +214,7 @@ class TrainLoop:
 
             # --- Model forward/backward ---
             step_proc_start = time.time()
-            lossmse, sample, sample_idwt = self.run_step(batch, cond)
+            ssim_score, sample, sample_idwt = self.run_step(batch, cond)  # MODIFIED: now returns SSIM
             step_proc_end = time.time()
             total_step_time += step_proc_end - step_proc_start
 
@@ -221,13 +226,14 @@ class TrainLoop:
                 self.summary_writer.add_scalar('time/load', total_data_time, global_step=self.step + self.resume_step)
                 self.summary_writer.add_scalar('time/forward', total_step_time, global_step=self.step + self.resume_step)
                 self.summary_writer.add_scalar('time/total', t_total, global_step=self.step + self.resume_step)
-                self.summary_writer.add_scalar('loss/MSE', lossmse.item(), global_step=self.step + self.resume_step)
+                # MODIFIED: Log SSIM instead of MSE as primary metric
+                self.summary_writer.add_scalar('metrics/SSIM', ssim_score, global_step=self.step + self.resume_step)
 
             wandb_log_dict = {
                 'time/load': total_data_time,
                 'time/forward': total_step_time,
                 'time/total': t_total,
-                'loss/MSE': lossmse.item(),
+                'metrics/SSIM': ssim_score,  # MODIFIED: Primary metric is now SSIM
                 'step': self.step + self.resume_step
             }
 
@@ -288,10 +294,10 @@ class TrainLoop:
             if self.step % self.log_interval == 0:
                 logger.dumpkvs()
 
-            # --- Saving (MODIFIED: Only save if best loss) ---
+            # --- Saving (MODIFIED: Now based on SSIM) ---
             if self.step % self.save_interval == 0:
                 save_start = time.time()
-                self.save_if_best(lossmse.item())
+                self.save_if_best(ssim_score)  # MODIFIED: Use SSIM for saving decision
                 save_end = time.time()
                 total_save_time += save_end - save_start
                 if os.environ.get("DIFFUSION_TRAINING_TEST", "") and self.step > 0:
@@ -302,6 +308,10 @@ class TrainLoop:
             if self.step % self.log_interval == 0:
                 elapsed = time.time() - start_time
                 print(f"[PROFILE] Step {self.step}: Data {total_data_time:.2f}s, Step {total_step_time:.2f}s, Log {total_log_time:.2f}s, Save {total_save_time:.2f}s, Total {elapsed:.2f}s")
+                # Debug print for SSIM tracking
+                if self.step <= 1000 or self.step % 500 == 0:
+                    best_ssim = self.best_ssims.get(self.contr, -1.0)
+                    print(f"[SSIM] Step {self.step}: Current={ssim_score:.4f}, Best={best_ssim:.4f} ({self.contr})")
                 # Reset counters for next interval
                 total_data_time = 0.0
                 total_step_time = 0.0
@@ -310,20 +320,26 @@ class TrainLoop:
 
         # Save the last checkpoint if it wasn't already saved.
         if (self.step - 1) % self.save_interval != 0:
-            self.save_if_best(lossmse.item())
+            self.save_if_best(ssim_score)
 
-    def save_if_best(self, current_loss):
-        """Only save checkpoint if current loss is better than previous best"""
+    def save_if_best(self, current_ssim):
+        """Only save checkpoint if current SSIM is better than previous best"""
         modality = self.contr
         
-        # Check if this is the best loss so far
-        is_best = False
-        if modality not in self.best_losses or current_loss < self.best_losses[modality]:
-            is_best = True
-            self.best_losses[modality] = current_loss
+        # Initialize if first time
+        if modality not in self.best_ssims:
+            self.best_ssims[modality] = -1.0  # Start with impossible SSIM value
+        
+        # Check if this is the best SSIM so far (HIGHER is better for SSIM)
+        is_best = current_ssim > self.best_ssims[modality]
+        
+        if is_best:
+            old_best = self.best_ssims[modality]
+            self.best_ssims[modality] = current_ssim
             
         if is_best and dist.get_rank() == 0:
-            print(f"🎯 NEW BEST for {modality}! Loss: {current_loss:.6f}")
+            improvement = current_ssim - old_best if old_best > -1.0 else current_ssim
+            print(f"🎯 NEW BEST for {modality}! SSIM: {current_ssim:.4f} (prev: {old_best:.4f}, +{improvement:.4f})")
             
             # Remove old best checkpoint if it exists
             if modality in self.best_checkpoints:
@@ -346,8 +362,8 @@ class TrainLoop:
                 self.best_checkpoints[modality] = full_save_path
                 print(f"✅ Saved new best checkpoint: {full_save_path}")
                 
-                # Save best losses to file
-                self._save_best_losses()
+                # Save best SSIMs to file
+                self._save_best_ssims()
                 
                 # Save optimizer state only for current best
                 opt_save_path = os.path.join(self.checkpoint_dir, f"opt_best_{modality}.pt")
@@ -355,14 +371,23 @@ class TrainLoop:
                     th.save(self.opt.state_dict(), f)
                 print(f"💾 Saved optimizer state: {opt_save_path}")
                 
+                # Log to wandb
+                wandb.log({
+                    f"checkpoints/{modality}/best_ssim": current_ssim,
+                    f"checkpoints/{modality}/improvement": improvement,
+                    "step": self.step + self.resume_step
+                })
+                
             except Exception as e:
                 print(f"❌ Error saving checkpoint: {e}")
         else:
             if not is_best:
-                print(f"Loss {current_loss:.6f} not better than best {self.best_losses.get(modality, float('inf')):.6f} for {modality}")
+                current_best = self.best_ssims.get(modality, -1.0)
+                if self.step % 100 == 0:  # Only print occasionally to avoid spam
+                    print(f"SSIM {current_ssim:.4f} not better than best {current_best:.4f} for {modality}")
 
     def run_step(self, batch, cond, label=None, info=dict()):
-        lossmse, sample, sample_idwt = self.forward_backward(batch, cond, label)
+        ssim_score, sample, sample_idwt = self.forward_backward(batch, cond, label)  # MODIFIED: get SSIM
 
         if self.use_fp16:
             self.grad_scaler.unscale_(self.opt)  # check self.grad_scaler._per_optimizer_states
@@ -374,13 +399,15 @@ class TrainLoop:
             info['norm/param_max'] = param_max_norm
             info['norm/grad_max'] = grad_max_norm
 
-        if not th.isfinite(lossmse): #infinite
-            if not th.isfinite(th.tensor(param_max_norm)):
-                logger.log(f"Model parameters contain non-finite value {param_max_norm}, entering breakpoint", level=logger.ERROR)
-                breakpoint()
-            else:
-                logger.log(f"Model parameters are finite, but loss is not: {lossmse}"
-                           "\n -> update will be skipped in grad_scaler.step()", level=logger.WARN)
+        # MODIFIED: Check hybrid loss finiteness (we backprop on hybrid but return SSIM)
+        # Note: ssim_score is just for saving, the actual loss backprop happens in forward_backward
+        if not th.isfinite(th.tensor(ssim_score)): #infinite SSIM
+            print(f"Non-finite SSIM: {ssim_score}")
+            ssim_score = 0.0  # Set to worst SSIM
+
+        if not th.isfinite(th.tensor(param_max_norm)):
+            logger.log(f"Model parameters contain non-finite value {param_max_norm}, entering breakpoint", level=logger.ERROR)
+            breakpoint()
 
         if self.use_fp16:
             print("Use fp16 ...")
@@ -391,7 +418,7 @@ class TrainLoop:
             self.opt.step()
         self._anneal_lr()
         self.log_step()
-        return lossmse, sample, sample_idwt
+        return ssim_score, sample, sample_idwt  # MODIFIED: return SSIM
 
     def forward_backward(self, batch, cond, label=None):
         for p in self.model.parameters():  # Zero out gradient
@@ -419,47 +446,65 @@ class TrainLoop:
 
         if isinstance(self.schedule_sampler, LossAwareSampler):
             self.schedule_sampler.update_with_local_losses(
-                t, losses1["loss"].detach())
+                t, losses1[0]["hybrid_loss"].detach())  # MODIFIED: Use hybrid loss for LossAwareSampler
 
-        losses = losses1[0]         # Loss value
+        losses = losses1[0]         # Loss dict with MSE, SSIM, and hybrid loss
         sample = losses1[1]         # Denoised subbands at t=0
         sample_idwt = losses1[2]    # Inverse wavelet transformed denoised subbands at t=0
 
-        # Log wavelet level loss
+        # MODIFIED: Extract individual loss components for logging
+        mse_loss = losses.get("mse_loss", 0.0)
+        ssim_score = losses.get("ssim_wav", 0.0) 
+        ssim_loss = losses.get("ssim_loss", 1.0)
+        hybrid_loss = losses.get("hybrid_loss", th.tensor(0.0))
+
+        # Log all loss components
         if self.summary_writer is not None:
-            self.summary_writer.add_scalar('loss/mse_wav_lll', losses["mse_wav"][0].item(),
-                                           global_step=self.step + self.resume_step)
-            self.summary_writer.add_scalar('loss/mse_wav_llh', losses["mse_wav"][1].item(),
-                                           global_step=self.step + self.resume_step)
-            self.summary_writer.add_scalar('loss/mse_wav_lhl', losses["mse_wav"][2].item(),
-                                           global_step=self.step + self.resume_step)
-            self.summary_writer.add_scalar('loss/mse_wav_lhh', losses["mse_wav"][3].item(),
-                                           global_step=self.step + self.resume_step)
-            self.summary_writer.add_scalar('loss/mse_wav_hll', losses["mse_wav"][4].item(),
-                                           global_step=self.step + self.resume_step)
-            self.summary_writer.add_scalar('loss/mse_wav_hlh', losses["mse_wav"][5].item(),
-                                           global_step=self.step + self.resume_step)
-            self.summary_writer.add_scalar('loss/mse_wav_hhl', losses["mse_wav"][6].item(),
-                                           global_step=self.step + self.resume_step)
-            self.summary_writer.add_scalar('loss/mse_wav_hhh', losses["mse_wav"][7].item(),
-                                           global_step=self.step + self.resume_step)
+            self.summary_writer.add_scalar('loss/MSE', mse_loss, global_step=self.step + self.resume_step)
+            self.summary_writer.add_scalar('loss/SSIM_loss', ssim_loss, global_step=self.step + self.resume_step)
+            self.summary_writer.add_scalar('loss/Hybrid', hybrid_loss.item(), global_step=self.step + self.resume_step)
+            self.summary_writer.add_scalar('metrics/SSIM', ssim_score, global_step=self.step + self.resume_step)
+            
+            # Log wavelet level MSE losses (existing logging)
+            if "mse_wav" in losses:
+                mse_wav = losses["mse_wav"]
+                self.summary_writer.add_scalar('loss/mse_wav_lll', mse_wav[0].item(), global_step=self.step + self.resume_step)
+                self.summary_writer.add_scalar('loss/mse_wav_llh', mse_wav[1].item(), global_step=self.step + self.resume_step)
+                self.summary_writer.add_scalar('loss/mse_wav_lhl', mse_wav[2].item(), global_step=self.step + self.resume_step)
+                self.summary_writer.add_scalar('loss/mse_wav_lhh', mse_wav[3].item(), global_step=self.step + self.resume_step)
+                self.summary_writer.add_scalar('loss/mse_wav_hll', mse_wav[4].item(), global_step=self.step + self.resume_step)
+                self.summary_writer.add_scalar('loss/mse_wav_hlh', mse_wav[5].item(), global_step=self.step + self.resume_step)
+                self.summary_writer.add_scalar('loss/mse_wav_hhl', mse_wav[6].item(), global_step=self.step + self.resume_step)
+                self.summary_writer.add_scalar('loss/mse_wav_hhh', mse_wav[7].item(), global_step=self.step + self.resume_step)
 
-        weights = th.ones(len(losses["mse_wav"])).cuda()  # Equally weight all wavelet channel losses
+        # MODIFIED: Use hybrid loss for backpropagation but return SSIM for model saving
+        loss = hybrid_loss  # This is what drives the gradients
+        
+        # Add to wandb logging
+        wandb.log({
+            'loss/MSE': mse_loss,
+            'loss/SSIM_loss': ssim_loss,
+            'loss/Hybrid': hybrid_loss.item(),
+            'metrics/SSIM': ssim_score,
+            'step': self.step + self.resume_step
+        })
 
-        loss = (losses["mse_wav"] * weights).mean()
-        lossmse = loss.detach()
-
-        log_loss_dict(self.diffusion, t, {k: v * weights for k, v in losses.items()})
+        # MODIFIED: Create weights for hybrid loss (keeping original wavelet weighting structure)
+        if "mse_wav" in losses:
+            weights = th.ones(len(losses["mse_wav"])).cuda()  # Equally weight all wavelet channel losses
+            log_loss_dict(self.diffusion, t, {k: v * weights for k, v in losses.items() if k == "mse_wav"})
+        else:
+            log_loss_dict(self.diffusion, t, {"hybrid_loss": hybrid_loss})
 
         # perform some finiteness checks
         if not th.isfinite(loss):
-            logger.log(f"Encountered non-finite loss {loss}")
+            logger.log(f"Encountered non-finite hybrid loss {loss}")
         if self.use_fp16:
             self.grad_scaler.scale(loss).backward()
         else:
             loss.backward()
 
-        return lossmse.detach(), sample, sample_idwt
+        return ssim_score, sample, sample_idwt  # MODIFIED: Return SSIM for saving decision
 
     def _anneal_lr(self):
         if not self.lr_anneal_steps:
@@ -553,8 +598,13 @@ def find_resume_checkpoint():
 
 def log_loss_dict(diffusion, ts, losses):
     for key, values in losses.items():
-        logger.logkv_mean(key, values.mean().item())
-        # Log the quantiles (four quartiles, in particular).
-        for sub_t, sub_loss in zip(ts.cpu().numpy(), values.detach().cpu().numpy()):
-            quartile = int(4 * sub_t / diffusion.num_timesteps)
-            logger.logkv_mean(f"{key}_q{quartile}", sub_loss)
+        if hasattr(values, 'mean'):
+            logger.logkv_mean(key, values.mean().item())
+            # Log the quantiles (four quartiles, in particular).
+            if hasattr(values, 'detach'):
+                for sub_t, sub_loss in zip(ts.cpu().numpy(), values.detach().cpu().numpy()):
+                    quartile = int(4 * sub_t / diffusion.num_timesteps)
+                    logger.logkv_mean(f"{key}_q{quartile}", sub_loss)
+        else:
+            # Handle scalar values (like hybrid_loss)
+            logger.logkv_mean(key, values.item() if hasattr(values, 'item') else values)

@@ -112,15 +112,15 @@ spec:
               echo "Renaming optimizer checkpoint..."
               if ls ./t1n/opt*.pt 1> /dev/null 2>&1; then
                 OLD_OPT=$(ls ./t1n/opt*.pt | head -1)
-                mv "$OLD_OPT" "./t1n/opt074500.pt"
-                echo "Renamed $OLD_OPT to ./t1n/opt074500.pt"
+                mv "$OLD_OPT" "./t1n/opt200000.pt"
+                echo "Renamed $OLD_OPT to ./t1n/opt0200000.pt"
               else
                 echo "No optimizer checkpoint found to rename"
               fi
               
               #MODALITIES=("t1n" "t1c" "t2w" "t2f")
               ls
-              bash run.sh --sampling-strategy sampled --timesteps 100 --mode train --train_modality t1n --resume_checkpoint ./t1n/brats_*.pt --resume_step 74500
+              bash run.sh --sampling-strategy sampled --timesteps 100 --mode train --train_modality t1n --resume_checkpoint 200kCheckpoints/t1n/brats_*.pt --resume_step 200000
               ls -la /data/checkpoints/
 
               echo "Job completed successfully"

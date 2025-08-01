@@ -36,8 +36,6 @@ spec:
       volumeMounts:
         - name: workspace
           mountPath: /app
-        - name: data1
-          mountPath: /data1
         - name: data2
           mountPath: /data2
         - name: data3
@@ -63,9 +61,6 @@ spec:
     - name: workspace
       emptyDir:
         sizeLimit: 50Gi
-    - name: data1
-      persistentVolumeClaim:
-        claimName: brats2025-1
     - name: data2
       persistentVolumeClaim:
         claimName: brats2025-2

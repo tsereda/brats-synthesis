@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: 1-fast-cwdm-t1n
+  name: 4-fast-cwdm-t2f
 spec:
   backoffLimit: 0
   template:
@@ -102,25 +102,25 @@ spec:
               mv datasets/ fast_cwdm/
               cd fast_cwdm
               rm -rf datasets/BRATS2023/training/BraTS-MET-00232-000/
-              cp /data/200kCheckpoints.zip 200kCheckpoints.zip 
-              unzip 200kCheckpoints.zip 
-              ls BraTSCheckpoints/t1n
+              cp /data/400kCheckpoints.zip 400kCheckpoints.zip 
+              unzip 400kCheckpoints.zip 
+              ls BraTSCheckpoints/t2f
               #python scripts/check_data_integrity.py --data_dir datasets/BRATS2023/training
-              cp -r BraTSCheckpoints/t1n ./t1n
+              cp -r BraTSCheckpoints/t2f ./t2f
               
               # Rename optimizer checkpoint to match expected resume step
               echo "Renaming optimizer checkpoint..."
-              if ls ./t1n/opt*.pt 1> /dev/null 2>&1; then
-                OLD_OPT=$(ls ./t1n/opt*.pt | head -1)
-                mv "$OLD_OPT" "./t1n/opt200000.pt"
-                echo "Renamed $OLD_OPT to ./t1n/opt0200000.pt"
+              if ls ./t2f/opt*.pt 1> /dev/null 2>&1; then
+                OLD_OPT=$(ls ./t2f/opt*.pt | head -1)
+                mv "$OLD_OPT" "./t2f/opt400000.pt"
+                echo "Renamed $OLD_OPT to ./t2f/opt0400000.pt"
               else
                 echo "No optimizer checkpoint found to rename"
               fi
               
               #MODALITIES=("t1n" "t1c" "t2w" "t2f")
               ls
-              bash run.sh --sampling-strategy sampled --timesteps 100 --mode train --train_modality t1n --resume_checkpoint 200kCheckpoints/t1n/brats_*.pt --resume_step 200000
+              bash run.sh --sampling-strategy sampled --timesteps 100 --mode train --train_modality t2f --resume_checkpoint 400kCheckpoints/t2f/brats_*.pt --resume_step 400000
               ls -la /data/checkpoints/
 
               echo "Job completed successfully"
@@ -149,7 +149,7 @@ spec:
             sizeLimit: 50Gi
         - name: data
           persistentVolumeClaim:
-            claimName: brats2025-1
+            claimName: brats2025-4
         - name: shm
           emptyDir:
             medium: Memory

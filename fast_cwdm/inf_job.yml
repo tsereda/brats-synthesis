@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: 1-fast-cwdm-t2f
+  name: 2-fast-cwdm-t2w
 spec:
   backoffLimit: 0
   template:
@@ -50,11 +50,10 @@ spec:
           command: ["/bin/bash", "-c"]
           args:
             - |
-              apt get install sudo
               sudo apt-get update && sudo apt-get install -y p7zip-full wget git
               pip install nibabel blobfile wandb batchgenerators simpleITK gdown monai
 
-              git clone -b inf https://github.com/tsereda/brats-synthesis.git ${REPO_PATH}
+              git clone -b ssim-loss https://github.com/tsereda/brats-synthesis.git ${REPO_PATH}
               cd ${REPO_PATH}
 
               7z x /data/ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData.tar.gz
@@ -65,14 +64,14 @@ spec:
 
               mkdir -p ./checkpoints
 
-              cp /data/200kCheckpoints.zip 200kCheckpoints.zip 
-              unzip 200kCheckpoints.zip 
+              cp /data/400kCheckpoints.zip 400kCheckpoints.zip 
+              unzip 400kCheckpoints.zip 
 
               ls -la 
-              cp 200kCheckpoints/t1c/brats_*.pt  ./checkpoints/
-              cp 200kCheckpoints/t1n/brats_*.pt  ./checkpoints/
-              cp 200kCheckpoints/t2f/brats_*.pt  ./checkpoints/
-              cp 200kCheckpoints/t2w/brats_*.pt  ./checkpoints/
+              cp t1c/brats_*.pt  ./checkpoints/
+              cp t1n/brats_*.pt  ./checkpoints/
+              cp t2f/brats_*.pt  ./checkpoints/
+              cp t2w/brats_*.pt  ./checkpoints/
               ls -la ./checkpoints/
 
               python fast_cwdm/scripts/complete_dataset.py \
@@ -80,7 +79,7 @@ spec:
                 --checkpoint_dir ./checkpoints \
                 --device cuda:0 \
                 --evaluation_mode \
-                --target_modality t2f
+                --target_modality t2w
          
           volumeMounts:
             - name: workspace
@@ -106,7 +105,7 @@ spec:
             sizeLimit: 50Gi
         - name: data
           persistentVolumeClaim:
-            claimName: brats2025-1
+            claimName: brats2025-2
         - name: shm
           emptyDir:
             medium: Memory

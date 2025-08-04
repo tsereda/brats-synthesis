@@ -110,7 +110,7 @@ def create_argparser():
         log_interval=100,
         save_interval=5000,
         resume_checkpoint='',
-        resume_step=200000,
+        resume_step=400000,
         use_fp16=False,
         fp16_scale_growth=1e-3,
         dataset='brats',

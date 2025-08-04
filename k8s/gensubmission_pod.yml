@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Pod
 metadata:
-  name: 5-brats-pod-eval
+  name: 5-brats-gen-submission
 spec:
   nodeSelector:
     nautilus.io/linstor: "true"
@@ -80,21 +80,21 @@ spec:
           cd ..
           git clone -b seemore https://github.com/tsereda/brats-synthesis.git
           cd brats-synthesis
-          unzip /data/BraTSChekpoints.zip
+          # unzip /data/BraTSChekpoints.zip
 
-          mkdir -p ./checkpoints
-          cp BraTSCheckpoints/t1c/brats_*.pt ./checkpoints/
-          cp BraTSCheckpoints/t1n/brats_*.pt ./checkpoints/
-          cp BraTSCheckpoints/t2f/brats_*.pt ./checkpoints/
-          cp BraTSCheckpoints/t2w/brats_*.pt ./checkpoints/
+          # mkdir -p ./checkpoints
+          # cp 400kCheckpoints/t1c/brats_*.pt ./checkpoints/
+          # cp BraTSCheckpoints/t1n/brats_*.pt ./checkpoints/
+          # cp BraTSCheckpoints/t2f/brats_*.pt ./checkpoints/
+          # cp BraTSCheckpoints/t2w/brats_*.pt ./checkpoints/
 
-          python fast_cwdm/scripts/complete_dataset.py \
-            --input_dir ../BraSyn_tutorial/ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData \
-            --checkpoint_dir ./checkpoints \
-            --device cuda:0 \
-            --evaluation_mode \
-            --evaluate_metrics \
-            --max_cases 250
+          # python fast_cwdm/scripts/complete_dataset.py \
+          #   --input_dir ../BraSyn_tutorial/ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData \
+          #   --checkpoint_dir ./checkpoints \
+          #   --device cuda:0 \
+          #   --evaluation_mode \
+          #   --evaluate_metrics \
+          #   --max_cases 250
 
           export nnUNet_raw="/app/nnunet/raw"
           export nnUNet_preprocessed="/app/nnunet/preprocessed"
@@ -125,7 +125,7 @@ spec:
           echo "Size check complete. Proceeding with nnUNet conversion..."
 
           echo "Converting data to nnUNet format..."
-          python conv.py
+          python conv.py --input_dir ../BraSyn_tutorial/ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData
 
           # Add to ~/.bashrc for persistence
           echo 'export nnUNet_raw="/app/nnunet/raw"' >> ~/.bashrc
@@ -150,6 +150,8 @@ spec:
               python ${REPO_PATH}/check_single_seg.py "$FIRST_SEG_FILE"
           fi
 
+          
+          python FIX.py validation_submission
           python prepare_val_sub.py
 
           FIRST_PROCESSED_FILE=$(find ./validation_submission -name "*.nii.gz" | head -1)
@@ -157,7 +159,7 @@ spec:
               python ${REPO_PATH}/check_single_seg.py "$FIRST_PROCESSED_FILE"
           fi
 
-          sudo cp brasyn_validation_submission.zip /data/brasyn_validation_submission-1.zip
+          sudo cp brasyn_validation_submission.zip /data/brasyn_validation_submissionREAL3.zip
           ls /data/
 
           sleep infinity

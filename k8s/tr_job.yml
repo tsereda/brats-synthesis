@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: 4-fast-cwdm-t2f
+  name: 2-fast-cwdm-t1c
 spec:
   backoffLimit: 0
   template:
@@ -104,23 +104,23 @@ spec:
               rm -rf datasets/BRATS2023/training/BraTS-MET-00232-000/
               cp /data/400kCheckpoints.zip 400kCheckpoints.zip 
               unzip 400kCheckpoints.zip 
-              ls BraTSCheckpoints/t2f
+              ls BraTSCheckpoints/t1c
               #python scripts/check_data_integrity.py --data_dir datasets/BRATS2023/training
-              cp -r BraTSCheckpoints/t2f ./t2f
+              cp -r BraTSCheckpoints/t1c ./t1c
               
               # Rename optimizer checkpoint to match expected resume step
               echo "Renaming optimizer checkpoint..."
-              if ls ./t2f/opt*.pt 1> /dev/null 2>&1; then
-                OLD_OPT=$(ls ./t2f/opt*.pt | head -1)
-                mv "$OLD_OPT" "./t2f/opt400000.pt"
-                echo "Renamed $OLD_OPT to ./t2f/opt0400000.pt"
+              if ls ./t1c/opt*.pt 1> /dev/null 2>&1; then
+                OLD_OPT=$(ls ./t1c/opt*.pt | head -1)
+                mv "$OLD_OPT" "./t1c/opt400000.pt"
+                echo "Renamed $OLD_OPT to ./t1c/opt0400000.pt"
               else
                 echo "No optimizer checkpoint found to rename"
               fi
               
-              #MODALITIES=("t1n" "t1c" "t2w" "t2f")
+              #MODALITIES=("t1c" "t1n" "t2w" "t2f")
               ls
-              bash run.sh --sampling-strategy sampled --timesteps 100 --mode train --train_modality t2f --resume_checkpoint 400kCheckpoints/t2f/brats_*.pt --resume_step 400000
+              bash run.sh --sampling-strategy sampled --timesteps 100 --mode train --train_modality t1c --resume_checkpoint t1c/brats_*.pt --resume_step 400000
               ls -la /data/checkpoints/
 
               echo "Job completed successfully"
@@ -149,7 +149,7 @@ spec:
             sizeLimit: 50Gi
         - name: data
           persistentVolumeClaim:
-            claimName: brats2025-4
+            claimName: brats2025-1
         - name: shm
           emptyDir:
             medium: Memory

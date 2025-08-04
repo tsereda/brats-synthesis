@@ -1,0 +1,185 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: 5-fast-cwdm-eval
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        app: fast-cwdm
+    spec:
+      nodeSelector:
+        #topology.kubernetes.io/region: us-west
+        nautilus.io/linstor: "true"
+      tolerations:
+        - key: nvidia.com/gpu
+          operator: Exists
+          effect: PreferNoSchedule
+      containers:
+        - name: brats-processing
+          image: gitlab-registry.nrp-nautilus.io/prp/jupyter-stack/prp
+          env:
+            - name: REPO_PATH
+              value: /app/BraSyn_tutorial
+            - name: PYTHONPATH
+              value: /app/BraSyn_tutorial
+            - name: CUDA_VISIBLE_DEVICES
+              value: "0"
+            - name: nnUNet_raw
+              value: /app/nnunet/raw
+            - name: nnUNet_preprocessed
+              value: /app/nnunet/preprocessed
+            - name: nnUNet_results
+              value: /app/nnunet/results
+            - name: PYTHONUNBUFFERED
+              value: "1"
+            - name: PYTHONIOENCODING
+              value: "UTF-8"
+            - name: WANDB_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: wandb-credentials
+                  key: api-key
+            - name: WANDB_PROJECT
+              value: "fast-cwmd"
+            - name: WANDB_ENTITY
+              value: "timgsereda"
+            - name: WANDB_MODE
+              value: "online"
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              sudo apt-get update && sudo apt-get install -y p7zip-full wget
+              pip install -r project/requirements.txt
+              pip install nnunetv2 gdown simpleitk numpy batchgenerators blobfile wandb monai
+              git clone https://github.com/tsereda/BraSyn_tutorial.git ${REPO_PATH}
+              cd ${REPO_PATH}
+              ls /data/
+              cp /data/ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData.tar.gz .
+              tar -xzf ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData.tar.gz
+              ls -lh
+              #sudo rm -r ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData/BraTS-GLI-*
+              source /opt/conda/etc/profile.d/mamba.sh
+              mamba create -n brasyn python=3.10 -y
+              mamba activate brasyn
+
+              
+              #python drop_modality.py
+
+              cd ..
+              git clone -b seemore https://github.com/tsereda/brats-synthesis.git
+              cd brats-synthesis
+              unzip /data/200kCheckpoints.zip
+
+              mkdir -p ./checkpoints
+              cp 200kCheckpoints/t1c/brats_*.pt ./checkpoints/
+              cp 200kCheckpoints/t1n/brats_*.pt ./checkpoints/
+              cp 200kCheckpoints/t2f/brats_*.pt ./checkpoints/
+              cp 200kCheckpoints/t2w/brats_*.pt ./checkpoints/
+
+              # python fast_cwdm/scripts/complete_dataset.py \
+              #   --input_dir ../BraSyn_tutorial/ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData \
+              #   --checkpoint_dir ./checkpoints \
+              #   --device cuda:0 \
+              #   --evaluation_mode \
+              #   --evaluate_metrics
+
+              export nnUNet_raw="/app/nnunet/raw"
+              export nnUNet_preprocessed="/app/nnunet/preprocessed"
+              export nnUNet_results="/app/nnunet/results"
+
+              mkdir -p /app/nnunet/{raw,preprocessed,results}
+
+              echo "Downloading pre-trained nnUNet weights, dataset.json, and plan.json..."
+              cd ${REPO_PATH}
+              gdown 1n9dqT114udr9Qq8iYEKsJK347iHg9N88
+              gdown 1A_suxQwElucF3w1HEYg3wMo6dG9OxBHo
+              gdown 1U2b0BTNi8zrJACReoi_W08Fe-wM394wI
+
+              echo "Downloaded files:"
+              ls -la *.pth *.json
+
+              echo "Setting up nnUNet model structure..."
+              # FIXED: Use Dataset137_BraTS2021_inference to match what nnUNet expects during inference
+              mkdir -p $nnUNet_results/Dataset137_BraTS2021_inference/nnUNetTrainer__nnUNetPlans__3d_fullres/fold_5/
+              
+              # Move files to correct locations
+              mv checkpoint_best.pth $nnUNet_results/Dataset137_BraTS2021_inference/nnUNetTrainer__nnUNetPlans__3d_fullres/fold_5/checkpoint_final.pth
+              mv dataset.json $nnUNet_results/Dataset137_BraTS2021_inference/nnUNetTrainer__nnUNetPlans__3d_fullres/
+              mv plans.json $nnUNet_results/Dataset137_BraTS2021_inference/nnUNetTrainer__nnUNetPlans__3d_fullres/
+
+              echo "Checking synthesized image dimensions..."
+              python check_image_sizes.py ../brats-synthesis/datasets/BRATS2023/pseudo_validation_completed
+              echo "Size check complete. Proceeding with nnUNet conversion..."
+
+              echo "Converting data to nnUNet format..."
+              python conv.py \
+              --input_dir "ASNR-MICCAI-BraTS2023-GLI-MET-ValidationData"
+
+              # Add to ~/.bashrc for persistence
+              echo 'export nnUNet_raw="/app/nnunet/raw"' >> ~/.bashrc
+              echo 'export nnUNet_preprocessed="/app/nnunet/preprocessed"' >> ~/.bashrc
+              echo 'export nnUNet_results="/app/nnunet/results"' >> ~/.bashrc
+
+              # Reload the profile
+              source ~/.bashrc
+
+              echo "Verifying setup..."
+              echo "Model files:"
+              ls -la $nnUNet_results/Dataset137_BraTS2021_inference/nnUNetTrainer__nnUNetPlans__3d_fullres/
+              echo "Data files:"
+              ls -la ${REPO_PATH}/Dataset137_BraTS2021_inference/imagesTs/ | head -5
+
+              echo "Running nnUNet prediction..."
+              # FIXED: Use direct path instead of symlink
+              nnUNetv2_predict -i "${REPO_PATH}/Dataset137_BraTS2021_inference/imagesTs" -o "./outputs" -d 137 -c 3d_fullres -f 5
+
+              FIRST_SEG_FILE=$(find ./outputs -name "*.nii.gz" | head -1)
+              if [ -n "$FIRST_SEG_FILE" ]; then
+                  python ${REPO_PATH}/check_single_seg.py "$FIRST_SEG_FILE"
+              fi
+
+              python prepare_val_sub.py
+              python FIX.py validation_submission #needs to press y!! plz fix
+
+              FIRST_PROCESSED_FILE=$(find ./validation_submission -name "*.nii.gz" | head -1)
+              if [ -n "$FIRST_PROCESSED_FILE" ]; then
+                  python ${REPO_PATH}/check_single_seg.py "$FIRST_PROCESSED_FILE"
+              fi
+
+              sudo cp brasyn_validation_submission.zip /data/brasyn_validation_submissionREAL0.zip
+              ls /data/
+
+         
+          volumeMounts:
+            - name: workspace
+              mountPath: /app
+            - name: data
+              mountPath: /data
+            - name: shm
+              mountPath: /dev/shm
+        
+          resources:
+            requests:
+              memory: 25Gi
+              cpu: "15"
+              nvidia.com/a100: "1"
+            limits:
+              memory: 30Gi
+              cpu: "18"
+              nvidia.com/a100: "1"
+     
+      volumes:
+        - name: workspace
+          emptyDir:
+            sizeLimit: 50Gi
+        - name: data
+          persistentVolumeClaim:
+            claimName: brats2025-5
+        - name: shm
+          emptyDir:
+            medium: Memory
+            sizeLimit: 16Gi
+     
+      restartPolicy: Never

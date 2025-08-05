@@ -2,3 +2,5 @@ app/checkpoints/
 400k.tar.gz
 test_input/
 test_output/
+reals3/
+real03/

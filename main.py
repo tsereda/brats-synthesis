@@ -46,7 +46,7 @@ def main():
     
     # Import and run the complete dataset synthesis
     try:
-        from fast_cwdm.scripts.complete_dataset import main as synthesis_main
+        from scripts.complete_dataset import main as synthesis_main
         
         # Override sys.argv to pass arguments to the synthesis script
         original_argv = sys.argv.copy()

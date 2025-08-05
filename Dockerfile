@@ -19,13 +19,18 @@ RUN pip install --no-cache-dir \
     blobfile==2.0.2 \
     matplotlib==3.7.2 \
     tqdm==4.65.0 \
-    pywt==1.4.1 \
+    PyWavelets \
     tensorboard==2.13.0 \
     wandb==0.15.8 \
-    pyyaml==6.0.1
+    pyyaml \
+    scipy
 
 # Copy the entire codebase
-COPY . /app/
+# Copy the app directory contents to /app/
+COPY app/ /app/
+# Copy other necessary files
+COPY main.py /app/
+COPY run.sh /app/
 
 # Create checkpoints directory (to be populated with your models)
 RUN mkdir -p /app/checkpoints
@@ -38,7 +43,7 @@ RUN mkdir -p /app/checkpoints
 # COPY path/to/your/brats_t2f_*.pt /app/checkpoints/
 
 # Set Python path for imports
-ENV PYTHONPATH="/app:/app/fast_cwdm"
+ENV PYTHONPATH="/app"
 
 # Ensure scripts are executable
 RUN chmod +x /app/main.py

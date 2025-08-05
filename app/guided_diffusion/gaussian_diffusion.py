@@ -21,7 +21,7 @@ from torchvision import transforms
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
 
-from fast_cwdm.DWT_IDWT.DWT_IDWT_layer import DWT_3D, IDWT_3D
+from DWT_IDWT.DWT_IDWT_layer import DWT_3D, IDWT_3D
 
 # SSIM import for loss calculation
 from monai.metrics import SSIMMetric

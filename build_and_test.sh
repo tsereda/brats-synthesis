@@ -1,6 +1,5 @@
 #!/bin/bash
 # Quick build and test script for BraTS submission
-
 set -e  # Exit on any error
 
 echo "🐳 Building BraTS Challenge Docker Container..."
@@ -31,10 +30,10 @@ fi
 # If 'test' argument provided, run the container
 if [ "$1" = "test" ]; then
     echo "🧪 Testing Docker container..."
-    
+   
     # Create output directory
     mkdir -p "$TEST_OUTPUT"
-    
+   
     # Run the container (simulating challenge environment)
     echo "🏃 Running container with challenge settings..."
     docker run --rm \
@@ -45,16 +44,28 @@ if [ "$1" = "test" ]; then
         --memory=16G \
         --shm-size=4G \
         fast-cwdm-brats2025
-    
+   
     echo "🔍 Checking outputs..."
-    if [ -d "$TEST_OUTPUT" ] && [ "$(ls -A $TEST_OUTPUT)" ]; then
-        echo "✅ Success! Output files created:"
+    
+    # Check for .nii.gz files recursively in output directory
+    OUTPUT_FILES=$(find "$TEST_OUTPUT" -name "*.nii.gz" 2>/dev/null | wc -l)
+    
+    if [ "$OUTPUT_FILES" -gt 0 ]; then
+        echo "✅ Success! Found $OUTPUT_FILES output files:"
+        find "$TEST_OUTPUT" -name "*.nii.gz" -exec ls -lh {} \;
+        echo ""
+        echo "📁 Directory structure:"
         ls -la "$TEST_OUTPUT"
+        if [ -d "$TEST_OUTPUT"/*/ ]; then
+            ls -la "$TEST_OUTPUT"/*/
+        fi
     else
-        echo "❌ No output files found in $TEST_OUTPUT"
+        echo "❌ No .nii.gz output files found in $TEST_OUTPUT"
+        echo "📁 Current output directory contents:"
+        ls -la "$TEST_OUTPUT" 2>/dev/null || echo "Output directory is empty or doesn't exist"
         exit 1
     fi
-    
+   
     echo "🎉 Docker test completed successfully!"
     echo "📤 Ready for Synapse upload!"
 else

@@ -4,12 +4,6 @@
 
 ### Step 1: Add Your Checkpoints (5 minutes)
 ```bash
-# Put your 4 best model files in checkpoints/
-mkdir -p checkpoints/
-cp /path/to/your/brats_t1n_*.pt checkpoints/
-cp /path/to/your/brats_t1c_*.pt checkpoints/
-cp /path/to/your/brats_t2w_*.pt checkpoints/
-cp /path/to/your/brats_t2f_*.pt checkpoints/
 
 # Update Dockerfile to copy them:
 # Uncomment and fix the COPY lines in Dockerfile around line 25

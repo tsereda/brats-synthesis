@@ -1,6 +1,16 @@
-Of course. Yes, the text you provided was duplicated. Here is a trimmed-down version that preserves all the essential information for the BraSyn Challenge.
-
-### 🧠 Challenge Goal
+@article{jiang2025fast,
+  title={Fast-DDPM: Fast denoising diffusion probabilistic models for medical image-to-image generation},
+  author={Jiang, Hongxu and Imran, Muhammad and Zhang, Teng and Zhou, Yuyin and Liang, Muxuan and Gong, Kuang and Shao, Wei},
+  journal={IEEE Journal of Biomedical and Health Informatics},
+  year={2025},
+  publisher={IEEE}
+}
+@article{friedrich2024cwdm,
+         title={cWDM: Conditional Wavelet Diffusion Models for Cross-Modality 3D Medical Image Synthesis},
+         author={Paul Friedrich and Alicia Durrer and Julia Wolleb and Philippe C. Cattin},
+         year={2024},
+         journal={arXiv preprint arXiv:2411.17203}}
+### Challenge Goal
 
 The main goal of the **BraSyn Challenge** is to develop algorithms that can create, or "synthesize," a missing brain MRI scan when the other scans are available. Most advanced brain tumor segmentation algorithms require a complete set of four MRI modalities:
 
@@ -13,13 +23,13 @@ This challenge addresses the common clinical problem where one of these scans mi
 
 -----
 
-### 🎯 Your Task
+### Your Task
 
 When given a patient's data, one of the four MRI modalities will be randomly removed. Your algorithm's job is to take the **three available MRI volumes** and **generate the fourth, missing one**.
 
 -----
 
-### 💾 Data
+### Data
 
 The challenge uses a diverse dataset from multiple institutions, based on the **BraTS-GLI 2023**, **BraTS-METS 2023**, and **BraTS-Meningioma 2023** collections. This means you'll encounter variations in image quality, scanner types, and acquisition protocols.
 
@@ -28,7 +38,7 @@ The challenge uses a diverse dataset from multiple institutions, based on the **
 
 -----
 
-### 📊 Assessment and Evaluation
+### Assessment and Evaluation
 
 Your synthesized images will be judged in two primary ways:
 
@@ -37,7 +47,7 @@ Your synthesized images will be judged in two primary ways:
 
 -----
 
-### 📁 Submission Format
+### Submission Format
 
 The submission format differs between the validation and final test stages. All files must be submitted in a single `.zip` or `.tar.gz` archive.
 
